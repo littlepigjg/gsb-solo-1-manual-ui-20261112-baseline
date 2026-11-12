@@ -82,7 +82,7 @@
 
       <section id="library-view" class="view">
         <div class="page-heading"><div><div class="eyebrow">YOUR VISUAL COLLECTION</div><h1>把灵感，收在这里<span>。</span></h1><p>原始素材与处理副本，始终清晰可寻。</p></div><button id="library-upload" class="button dark"><span data-icon="plus"></span>导入素材</button></div>
-        <div class="library-toolbar"><div class="search-field"><span data-icon="search"></span><input id="asset-search" placeholder="搜索图片名称…" aria-label="搜索图片名称"></div><select id="asset-kind" aria-label="图片类型"><option value="all">全部图片</option><option value="original">导入原图</option><option value="result">处理副本</option><option value="sample">示例素材</option></select><button id="select-all" class="button subtle small">选择当前页</button><span id="selection-count">已选 0 张</span><button id="library-batch" class="button outline small">批量处理</button><button id="library-export" class="button dark small">打包导出</button></div>
+        <div class="library-toolbar"><div class="search-field"><span data-icon="search"></span><input id="asset-search" placeholder="搜索图片名称…" aria-label="搜索图片名称"></div><select id="asset-kind" aria-label="图片类型"><option value="all">全部图片</option><option value="original">导入原图</option><option value="result">处理副本</option><option value="sample">示例素材</option></select><button id="select-all" class="button subtle small">选择当前页</button><span id="selection-count">已选 0 张</span><button id="library-contact" class="button outline small">联系印样</button><button id="library-batch" class="button outline small">批量处理</button><button id="library-export" class="button dark small">打包导出</button></div>
         <div id="asset-grid" class="asset-grid"></div><button id="load-more" class="button outline load-more" hidden>加载更多</button>
       </section>
 
@@ -101,5 +101,32 @@
   <dialog id="preset-dialog"><form id="preset-form"><div class="dialog-heading"><h2>保存这份创作流程</h2><button type="button" class="icon-button close-dialog" aria-label="关闭">×</button></div><label>预设名称<input id="preset-name" required maxlength="80" placeholder="例如：午后胶片"></label><label>简短说明<textarea id="preset-description" maxlength="300" rows="3" placeholder="记录这份流程适合的场景"></textarea></label><button class="button dark wide" type="submit">保存预设</button></form></dialog>
   <dialog id="system-dialog"><div class="dialog-heading"><h2>系统与数据</h2><button class="icon-button close-dialog" aria-label="关闭">×</button></div><div id="system-content"></div><a class="button outline wide" href="/api/backup" download>下载 JSON 元数据备份</a><p class="muted">元数据备份不包含图片文件。完整备份请复制项目的 data 文件夹。</p></dialog>
   <dialog id="confirm-dialog"><div class="dialog-heading"><h2 id="confirm-title">删除素材</h2><button class="icon-button close-dialog" aria-label="关闭">×</button></div><p id="confirm-message"></p><div class="dialog-actions"><button class="button subtle close-dialog">取消</button><button id="confirm-action" class="button danger">确认删除</button></div></dialog>
+
+  <dialog id="contact-dialog">
+    <div class="dialog-heading"><div><div class="eyebrow">CONTACT SHEET</div><h2>联系印样</h2></div><button type="button" class="icon-button close-dialog" aria-label="关闭">×</button></div>
+    <div id="contact-warning" class="contact-warning" hidden></div>
+    <div class="contact-layout">
+      <form id="contact-form" class="contact-controls">
+        <label>每行数量<input id="contact-columns" type="number" min="1" max="24" step="1" value="4"></label>
+        <div class="two-fields">
+          <label>单元格宽度 (px)<input id="contact-cell-width" type="number" min="60" max="1200" step="10" value="320"></label>
+          <label>单元格高度 (px)<input id="contact-cell-height" type="number" min="60" max="1200" step="10" value="320"></label>
+        </div>
+        <div class="two-fields">
+          <label>单元格间距 (px)<input id="contact-gap" type="number" min="0" max="200" step="2" value="24"></label>
+          <label>画布留白 (px)<input id="contact-padding" type="number" min="0" max="300" step="2" value="36"></label>
+        </div>
+        <label>背景颜色<input id="contact-background" type="color" value="#f7f8f4"></label>
+        <p class="muted">横图竖图均完整等比缩放到单元格内，不裁剪；透明区域自然落在背景色上。重复选择的素材会按选择顺序重复出现，最后一行不足的位置保持空白。</p>
+        <div class="contact-order-head"><span class="field-label">素材顺序（可重复、可删除）</span><span id="contact-order-count">0 张</span></div>
+        <div id="contact-order" class="contact-order"></div>
+      </form>
+      <div class="contact-preview-wrap">
+        <div id="contact-meta" class="contact-meta">调整参数后自动生成预览</div>
+        <div id="contact-preview" class="contact-preview"><div class="empty-hint">暂无预览</div></div>
+      </div>
+    </div>
+    <div class="dialog-actions"><button type="button" class="button subtle close-dialog">取消</button><button id="contact-generate" type="button" class="button dark" disabled><span data-icon="download"></span>生成并下载</button></div>
+  </dialog>
 </body>
 </html>

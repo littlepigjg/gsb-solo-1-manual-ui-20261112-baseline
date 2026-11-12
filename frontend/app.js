@@ -8,6 +8,7 @@ const state = {
   assets: [], assetMap: new Map(), assetTotal: 0, selected: new Set(),
   pipeline: [], presets: [], jobs: [], busy: false, comparing: false,
   selectionToken: 0, libraryToken: 0, exportIds: [], jobPoll: null,
+  contactIds: [], contactToken: 0, contactBusy: false,
 };
 
 const paths = {
@@ -33,6 +34,7 @@ const paths = {
   play: '<path d="m8 4 12 8-12 8Z"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="m10 3-1 3-3 1-3 3 2 2-1 4 3 1 2 4 3-1 4 1 1-3 4-2-1-3 1-4-3-1-2-3Z"/>',
+  contact: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/><path d="M6.5 15h.01M14 13.5l2.2 2.2L20 12"/><path d="M6.5 6h.01"/>',
 };
 
 function icon(name) {
@@ -543,6 +545,141 @@ async function showSystem() {
   $("#system-content").innerHTML = `<dl class="system-data">${rows.map(([label, value]) => `<dt>${label}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl>${diagnostics.issues.length ? `<p class="system-alert">${diagnostics.issues.length} 项数据检查提示，请查看 /api/diagnostics。</p>` : '<p class="muted">JSON 数据与图片文件检查正常。</p>'}`;
 }
 
+function contactOptions() {
+  return {
+    asset_ids: state.contactIds,
+    columns: Number($("#contact-columns").value),
+    cell_width: Number($("#contact-cell-width").value),
+    cell_height: Number($("#contact-cell-height").value),
+    gap: Number($("#contact-gap").value),
+    padding: Number($("#contact-padding").value),
+    background: $("#contact-background").value,
+  };
+}
+
+function contactEstimate(options) {
+  const count = options.asset_ids.length;
+  const columns = options.columns || 1;
+  const rows = count ? Math.ceil(count / columns) : 0;
+  const width = (options.padding || 0) * 2 + columns * (options.cell_width || 0) + Math.max(columns - 1, 0) * (options.gap || 0);
+  const height = (options.padding || 0) * 2 + rows * (options.cell_height || 0) + Math.max(rows - 1, 0) * (options.gap || 0);
+  return { rows, columns, width, height };
+}
+
+function setContactWarning(message) {
+  const banner = $("#contact-warning");
+  if (message) {
+    banner.hidden = false;
+    banner.textContent = message;
+  } else {
+    banner.hidden = true;
+    banner.textContent = "";
+  }
+}
+
+function renderContactOrder() {
+  $("#contact-order-count").textContent = `${state.contactIds.length} 张`;
+  const order = $("#contact-order");
+  if (!state.contactIds.length) {
+    order.innerHTML = '<p class="muted">没有素材。关闭后到素材库勾选图片，再打开联系印样。</p>';
+    return;
+  }
+  order.innerHTML = state.contactIds.map((id, index) => {
+    const asset = state.assetMap.get(id);
+    const name = asset ? asset.name : "未知素材";
+    const thumb = asset ? asset.thumbnail_url : "";
+    return `<div class="contact-chip" title="${escapeHtml(name)}"><span class="contact-chip-index">${index + 1}</span><img src="${thumb}" alt="${escapeHtml(name)}"><span class="contact-chip-name">${escapeHtml(name)}</span><button type="button" data-contact-duplicate="${index}" aria-label="重复此素材">+</button><button type="button" data-contact-remove="${index}" aria-label="移除">×</button></div>`;
+  }).join("");
+  $$("[data-contact-remove]", order).forEach(button => button.addEventListener("click", () => {
+    state.contactIds.splice(Number(button.dataset.contactRemove), 1);
+    renderContactOrder();
+    scheduleContactPreview();
+  }));
+  $$("[data-contact-duplicate]", order).forEach(button => button.addEventListener("click", () => {
+    const index = Number(button.dataset.contactDuplicate);
+    if (state.contactIds.length >= state.config.max_batch) { toast(`一次最多 ${state.config.max_batch} 张。`, "error"); return; }
+    state.contactIds.splice(index + 1, 0, state.contactIds[index]);
+    renderContactOrder();
+    scheduleContactPreview();
+  }));
+}
+
+function openContactSheet() {
+  if (!state.selected.size) { toast("请先在素材库勾选要整理的素材。", "error"); return; }
+  state.contactIds = [...state.selected];
+  $("#contact-preview").innerHTML = '<div class="empty-hint">正在生成预览…</div>';
+  $("#contact-meta").textContent = "正在生成预览…";
+  setContactWarning("");
+  $("#contact-dialog").showModal();
+  renderContactOrder();
+  requestContactPreview();
+}
+
+let contactPreviewTimer = null;
+function scheduleContactPreview() {
+  clearTimeout(contactPreviewTimer);
+  contactPreviewTimer = setTimeout(() => requestContactPreview().catch(error => toast(error.message, "error")), 220);
+}
+
+async function requestContactPreview() {
+  const options = contactOptions();
+  const estimate = contactEstimate(options);
+  $("#contact-meta").textContent = `预计画布 ${estimate.width} × ${estimate.height} px · ${estimate.rows} 行 × ${estimate.columns} 列`;
+  if (!options.asset_ids.length) {
+    setContactWarning("素材列表为空，无法生成联系印样。");
+    $("#contact-generate").disabled = true;
+    $("#contact-preview").innerHTML = '<div class="empty-hint">暂无预览</div>';
+    return;
+  }
+  if (![options.columns, options.cell_width, options.cell_height, options.gap, options.padding].every(Number.isFinite)) {
+    setContactWarning("请检查参数，所有数值必须为有效数字。");
+    return;
+  }
+  const token = ++state.contactToken;
+  state.contactBusy = true;
+  $("#contact-generate").disabled = true;
+  let data;
+  try {
+    data = await api("/contact-sheet/preview", { method: "POST", body: options });
+  } catch (error) {
+    if (token === state.contactToken) {
+      setContactWarning(error.message);
+      $("#contact-preview").innerHTML = '<div class="empty-hint">预览生成失败，请调整参数</div>';
+    }
+    state.contactBusy = false;
+    throw error;
+  }
+  if (token !== state.contactToken) return;
+  state.contactBusy = false;
+  setContactWarning("");
+  $("#contact-generate").disabled = false;
+  $("#contact-meta").textContent = `实际画布 ${data.width} × ${data.height} px · ${data.rows} 行 × ${data.columns} 列 · 共 ${data.cells} 格，最后一行空位留白`;
+  $("#contact-preview").innerHTML = `<img src="${data.image}" alt="联系印样预览" style="background:${escapeHtml(options.background)}">`;
+}
+
+async function generateContactSheet() {
+  if (state.contactBusy || !state.contactIds.length) return;
+  const button = $("#contact-generate");
+  button.disabled = true;
+  const original = button.innerHTML;
+  button.textContent = "正在生成…";
+  try {
+    const record = await api("/contact-sheet", { method: "POST", body: contactOptions() });
+    const link = document.createElement("a");
+    link.href = record.url;
+    link.download = record.download_name;
+    link.click();
+    toast(`联系印样已生成 · ${humanBytes(record.bytes)}`);
+    $("#contact-dialog").close();
+  } catch (error) {
+    setContactWarning(error.message);
+    toast(error.message, "error");
+  } finally {
+    button.disabled = false;
+    button.innerHTML = original;
+  }
+}
+
 function bindEvents() {
   $$("[data-view]").forEach(button => button.addEventListener("click", () => setView(button.dataset.view)));
   $$("[data-panel]").forEach(button => button.addEventListener("click", () => setPanel(button.dataset.panel)));
@@ -595,6 +732,16 @@ function bindEvents() {
   on("#go-batch", "click", () => { if (!state.selected.size && state.current) state.selected.add(state.current.id); setView("jobs"); });
   on("#library-batch", "click", () => setView("jobs"));
   on("#library-export", "click", () => openExport([...state.selected]));
+  on("#library-contact", "click", openContactSheet);
+  on("#contact-generate", "click", generateContactSheet);
+  ["#contact-columns", "#contact-cell-width", "#contact-cell-height", "#contact-gap", "#contact-padding", "#contact-background"].forEach(selector => {
+    on(selector, "input", () => {
+      const estimate = contactEstimate(contactOptions());
+      $("#contact-meta").textContent = `预计画布 ${estimate.width} × ${estimate.height} px · ${estimate.rows} 行 × ${estimate.columns} 列`;
+      scheduleContactPreview();
+    });
+  });
+  on("#contact-dialog", "close", () => { state.contactToken += 1; state.contactBusy = false; clearTimeout(contactPreviewTimer); });
   on("#export-button", "click", () => openExport([requireImage().id]));
   on("#export-form", "submit", exportImages);
   on("#export-quality", "input", event => { $("#quality-value").textContent = event.target.value; });

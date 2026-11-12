@@ -208,6 +208,19 @@ def export_archive():
     return ok(service("exports").archive(data.get("asset_ids"), data.get("options", {})), 201)
 
 
+@api.post("/contact-sheet/preview")
+def contact_sheet_preview():
+    data = payload()
+    options = service("contact_sheet").validate(data)
+    return ok(service("contact_sheet").preview(options))
+
+
+@api.post("/contact-sheet")
+def contact_sheet_create():
+    data = payload()
+    return ok(service("contact_sheet").create(data), 201)
+
+
 @api.get("/exports/<export_id>/download")
 def export_download(export_id):
     path, record, mime = service("exports").file(export_id)

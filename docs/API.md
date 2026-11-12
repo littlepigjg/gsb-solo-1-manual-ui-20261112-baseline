@@ -35,6 +35,8 @@
 | POST | `/exports` | 单图实际格式编码 |
 | POST | `/exports/archive` | 多图编码并生成 ZIP |
 | GET | `/exports/{id}/download` | 下载导出产物 |
+| POST | `/contact-sheet/preview` | 按参数临时合成联系印样预览，不写入任何数据 |
+| POST | `/contact-sheet` | 生成联系印样 PNG，并在 exports 中登记下载记录 |
 | GET | `/events` | 最近 100 条操作记录 |
 | GET | `/backup` | 下载完整 JSON 元数据快照 |
 
@@ -89,6 +91,24 @@
 ```
 
 支持 `PNG/JPEG/WEBP/BMP/TIFF/GIF`。响应的 `url` 可直接下载。ZIP 接口将 `asset_id` 改为 `asset_ids` 数组，压缩包中包含安全命名的图片和 `manifest.json`。
+
+## 联系印样请求
+
+```json
+{
+  "asset_ids": ["图片1的id", "图片2的id", "图片1的id"],
+  "columns": 4,
+  "cell_width": 320,
+  "cell_height": 320,
+  "gap": 24,
+  "padding": 36,
+  "background": "#f7f8f4"
+}
+```
+
+`asset_ids` 为 1–24 个素材 ID，允许重复，服务端严格按数组顺序摆放（重复选择即重复出现）。`columns` 为每行数量（1–24），`cell_width/cell_height` 为单元格尺寸（60–1200 px），`gap` 为单元格间距（0–200），`padding` 为画布四边留白（0–300），`background` 为 `#RRGGBB` 背景色。
+
+每张图等比缩放到对应单元格内（`thumbnail`，不裁剪、不变形），横图竖图均保留完整比例并居中；透明像素通过 alpha 合成自然落在背景色上；最后一行未使用的单元格保持背景空白。预览接口返回 base64 数据 URL 与实际画布尺寸（最长边限制 1600 px），不创建任何记录；生成接口输出完整分辨率 PNG，仅在 `exports` 集合追加一条 `kind=contact_sheet` 的下载记录，素材、处理历史与素材库均不改变。素材不存在返回 404，素材文件丢失返回 410，画布单边超过 8192 px 或总面积超过 1600 万像素在合成前返回 400，此时同样不产生任何写入。
 
 ## 状态码
 
