@@ -1,9 +1,9 @@
 {
   "scope": "backend/**/*.py only; excludes frontend, tests, scripts, run.py and dependencies",
   "files": 35,
-  "physical_lines": 5574,
-  "nonblank_noncomment_lines": 5114,
-  "code_lines_excluding_docstrings": 5074,
+  "physical_lines": 5686,
+  "nonblank_noncomment_lines": 5207,
+  "code_lines_excluding_docstrings": 5167,
   "modules": [
     {
       "file": "backend/__init__.py",
@@ -13,9 +13,9 @@
     },
     {
       "file": "backend/analysis.py",
-      "physical_lines": 106,
-      "nonblank_noncomment_lines": 101,
-      "code_lines_excluding_docstrings": 100
+      "physical_lines": 193,
+      "nonblank_noncomment_lines": 169,
+      "code_lines_excluding_docstrings": 168
     },
     {
       "file": "backend/app.py",
@@ -103,9 +103,9 @@
     },
     {
       "file": "backend/exports.py",
-      "physical_lines": 120,
-      "nonblank_noncomment_lines": 109,
-      "code_lines_excluding_docstrings": 108
+      "physical_lines": 128,
+      "nonblank_noncomment_lines": 117,
+      "code_lines_excluding_docstrings": 116
     },
     {
       "file": "backend/imaging.py",
@@ -139,15 +139,15 @@
     },
     {
       "file": "backend/operations/edges.py",
-      "physical_lines": 88,
-      "nonblank_noncomment_lines": 69,
-      "code_lines_excluding_docstrings": 68
+      "physical_lines": 92,
+      "nonblank_noncomment_lines": 73,
+      "code_lines_excluding_docstrings": 72
     },
     {
       "file": "backend/operations/enhance.py",
-      "physical_lines": 100,
-      "nonblank_noncomment_lines": 75,
-      "code_lines_excluding_docstrings": 74
+      "physical_lines": 101,
+      "nonblank_noncomment_lines": 76,
+      "code_lines_excluding_docstrings": 75
     },
     {
       "file": "backend/operations/formatting.py",
@@ -157,9 +157,9 @@
     },
     {
       "file": "backend/operations/geometry.py",
-      "physical_lines": 220,
-      "nonblank_noncomment_lines": 175,
-      "code_lines_excluding_docstrings": 174
+      "physical_lines": 225,
+      "nonblank_noncomment_lines": 180,
+      "code_lines_excluding_docstrings": 179
     },
     {
       "file": "backend/operations/watermark.py",
@@ -205,9 +205,9 @@
     },
     {
       "file": "backend/storage.py",
-      "physical_lines": 159,
-      "nonblank_noncomment_lines": 138,
-      "code_lines_excluding_docstrings": 133
+      "physical_lines": 166,
+      "nonblank_noncomment_lines": 145,
+      "code_lines_excluding_docstrings": 140
     },
     {
       "file": "backend/validation.py",

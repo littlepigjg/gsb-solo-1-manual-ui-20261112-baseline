@@ -415,13 +415,20 @@ async function loadAnalysis() {
   $("#analysis-content").innerHTML = '<p class="muted">正在分析画面…</p>';
   const [analysis, history] = await Promise.all([api(`/assets/${id}/analysis`), api(`/assets/${id}/history`)]);
   if (state.current?.id !== id) return;
+  const dash = value => (value === null || value === undefined ? "—" : value);
   const values = [
     ["图像尺寸", `${analysis.width} × ${analysis.height}`], ["宽高比例", analysis.aspect_ratio],
-    ["像素数量", `${analysis.megapixels} MP`], ["平均亮度", `${analysis.brightness} / 255`],
-    ["亮度标准差", analysis.contrast], ["信息熵", `${analysis.entropy_bits} bit`],
+    ["像素数量", `${analysis.megapixels} MP`],
+    ["分析像素", `${analysis.analyzed_pixels.toLocaleString()} 个（透明像素不参与统计）`],
+    ["平均亮度", analysis.brightness === null ? "—" : `${analysis.brightness} / 255`],
+    ["亮度标准差", dash(analysis.contrast)],
+    ["信息熵", analysis.entropy_bits === null ? "—" : `${analysis.entropy_bits} bit`],
     ["透明像素", `${analysis.transparent_percent}%`],
   ];
-  $("#analysis-content").innerHTML = `<dl>${values.map(([key, value]) => `<dt>${key}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl><h3 class="analysis-heading">RGB 直方图</h3><canvas class="histogram" id="histogram" width="480" height="190" aria-label="RGB 通道直方图"></canvas><h3 class="analysis-heading">画面色谱</h3><div class="swatches">${analysis.palette.map(color => `<span class="swatch" style="background:${color.hex}" title="${color.hex} · ${color.percentage}%"></span>`).join("")}</div><p class="suggestion">${escapeHtml(analysis.suggestions[0].message)}</p><h3 class="analysis-heading">处理历史 · ${history.length} 个版本</h3><div class="history-list">${history.map((item, index) => `<button class="history-item" data-history="${item.id}">${String(index + 1).padStart(2, "0")} / ${escapeHtml(item.name)}</button>`).join("")}</div>`;
+  const paletteHtml = analysis.palette.length
+    ? `<div class="swatches">${analysis.palette.map(color => `<span class="swatch" style="background:${color.hex}" title="${color.hex} · ${color.percentage}%"></span>`).join("")}</div>`
+    : '<p class="muted">没有可提取颜色的有效像素。</p>';
+  $("#analysis-content").innerHTML = `<dl>${values.map(([key, value]) => `<dt>${key}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl><h3 class="analysis-heading">RGB 直方图</h3><canvas class="histogram" id="histogram" width="480" height="190" aria-label="RGB 通道直方图"></canvas><h3 class="analysis-heading">画面色谱</h3>${paletteHtml}<p class="suggestion">${escapeHtml(analysis.suggestions[0].message)}</p><h3 class="analysis-heading">处理历史 · ${history.length} 个版本</h3><div class="history-list">${history.map((item, index) => `<button class="history-item" data-history="${item.id}">${String(index + 1).padStart(2, "0")} / ${escapeHtml(item.name)}</button>`).join("")}</div>`;
   const canvas = $("#histogram");
   const ctx = canvas.getContext("2d");
   const channels = [["red", "#c17e67"], ["green", "#729e55"], ["blue", "#739da8"]];
