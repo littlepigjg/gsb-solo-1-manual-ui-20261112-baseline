@@ -19,7 +19,8 @@
       </a>
       <div class="sidebar-section-title">创作空间 <span>WORKSPACE</span></div>
       <nav class="space-nav" aria-label="工作空间">
-        <button class="nav-item active" data-view="editor"><span data-icon="sliders"></span>图像工作台<span class="nav-dot"></span></button>
+        <button class="nav-item" data-view="editor"><span data-icon="sliders"></span>图像工作台<span class="nav-dot"></span></button>
+        <button class="nav-item" data-view="atlas"><span data-icon="grid"></span>图集制作<span class="nav-dot"></span></button>
         <button class="nav-item" data-view="library"><span data-icon="image"></span>我的素材库<span id="library-count" class="count">0</span></button>
         <button class="nav-item" data-view="jobs"><span data-icon="grid"></span>批量任务<span id="job-count" class="count">0</span></button>
       </nav>
@@ -84,6 +85,44 @@
         <div class="page-heading"><div><div class="eyebrow">YOUR VISUAL COLLECTION</div><h1>把灵感，收在这里<span>。</span></h1><p>原始素材与处理副本，始终清晰可寻。</p></div><button id="library-upload" class="button dark"><span data-icon="plus"></span>导入素材</button></div>
         <div class="library-toolbar"><div class="search-field"><span data-icon="search"></span><input id="asset-search" placeholder="搜索图片名称…" aria-label="搜索图片名称"></div><select id="asset-kind" aria-label="图片类型"><option value="all">全部图片</option><option value="original">导入原图</option><option value="result">处理副本</option><option value="sample">示例素材</option></select><button id="select-all" class="button subtle small">选择当前页</button><span id="selection-count">已选 0 张</span><button id="library-batch" class="button outline small">批量处理</button><button id="library-export" class="button dark small">打包导出</button></div>
         <div id="asset-grid" class="asset-grid"></div><button id="load-more" class="button outline load-more" hidden>加载更多</button>
+      </section>
+
+      <section id="atlas-view" class="view">
+        <div class="page-heading"><div><div class="eyebrow">SPRITE ATLAS WORKSHOP</div><h1>把小图，收进同一张画布<span>。</span></h1><p>选择素材、决定透明空边与旋转策略，预览排布后下载图集和位置说明。</p></div><button id="atlas-upload" class="button dark"><span data-icon="plus"></span>导入素材</button></div>
+        <div class="atlas-layout">
+          <section class="atlas-compose">
+            <div class="section-number">01 / 选择素材 <span id="atlas-selected-count" class="atlas-count">0</span></div>
+            <div class="atlas-toolbar">
+              <div class="search-field"><span data-icon="search"></span><input id="atlas-search" placeholder="搜索素材名称…" aria-label="搜索图集素材"></div>
+              <select id="atlas-kind" aria-label="素材类型"><option value="all">全部类型</option><option value="original">导入原图</option><option value="result">处理副本</option><option value="sample">示例素材</option></select>
+            </div>
+            <div id="atlas-picker" class="atlas-picker"></div>
+            <div class="section-number atlas-options-title">02 / 排布设置</div>
+            <div class="atlas-options">
+              <div class="two-fields">
+                <label>画布宽度（px）<input id="atlas-width" type="number" min="1" max="8192" step="1" value="1024"></label>
+                <label>画布高度（px）<input id="atlas-height" type="number" min="1" max="8192" step="1" value="1024"></label>
+              </div>
+              <label>图块间距（padding，px）<input id="atlas-padding" type="number" min="0" max="256" step="1" value="2"></label>
+              <label class="checkbox-label"><input id="atlas-trim" type="checkbox" checked>去除每张图四周的透明空边</label>
+              <small class="field-help">开启后记录原始尺寸与裁切偏移，位置说明可无损还原；即使关闭，完全透明的空图也会被拦下，不会混入成品。</small>
+              <label class="checkbox-label"><input id="atlas-rotate" type="checkbox">允许 90° 旋转以节省空间</label>
+              <small class="field-help">旋转方向会写入位置说明，还原时逆时针转回即可。</small>
+            </div>
+            <button id="atlas-preview-button" class="button dark wide"><span data-icon="grid"></span>生成排布预览</button>
+            <button id="atlas-download-button" class="button outline wide" disabled><span data-icon="download"></span>下载图集与位置说明（ZIP）</button>
+            <p class="muted">放不进目标画布时整次制作会停止并返回无法放置的素材清单，不会交付缺图的结果。ZIP 内含 <code>atlas.png</code> 与 <code>atlas-manifest.json</code>。</p>
+          </section>
+          <section class="atlas-preview-panel">
+            <div class="section-number">排布预览 / LAYOUT PREVIEW</div>
+            <div id="atlas-status" class="atlas-status empty">选择素材并点击“生成排布预览”。</div>
+            <div id="atlas-canvas-wrap" class="atlas-canvas-wrap" hidden>
+              <canvas id="atlas-canvas" width="560" height="560" aria-label="图集排布预览"></canvas>
+            </div>
+            <div id="atlas-summary" class="atlas-summary"></div>
+            <div id="atlas-frame-list" class="atlas-frame-list"></div>
+          </section>
+        </div>
       </section>
 
       <section id="jobs-view" class="view">

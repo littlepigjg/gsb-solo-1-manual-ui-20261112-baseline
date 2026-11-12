@@ -8,6 +8,10 @@ const state = {
   assets: [], assetMap: new Map(), assetTotal: 0, selected: new Set(),
   pipeline: [], presets: [], jobs: [], busy: false, comparing: false,
   selectionToken: 0, libraryToken: 0, exportIds: [], jobPoll: null,
+  atlas: {
+    picker: [], pickerTotal: 0, token: 0, chosen: new Set(),
+    plan: null, planSignature: "", dirty: true, busy: false,
+  },
 };
 
 const paths = {
@@ -111,9 +115,10 @@ function setView(view) {
   state.view = view;
   $$(".view").forEach(element => element.classList.toggle("active", element.id === `${view}-view`));
   $$("[data-view]").forEach(button => button.classList.toggle("active", button.dataset.view === view));
-  const titles = { editor: "图像工作台", library: "我的素材库", jobs: "批量任务" };
+  const titles = { editor: "图像工作台", atlas: "图集制作", library: "我的素材库", jobs: "批量任务" };
   $("#view-title").textContent = titles[view];
   if (view === "library") refreshLibrary().catch(error => toast(error.message, "error"));
+  if (view === "atlas") refreshAtlasPicker().catch(error => toast(error.message, "error"));
   if (view === "jobs") { renderBatch(); refreshJobs().catch(error => toast(error.message, "error")); }
 }
 
@@ -528,6 +533,206 @@ async function exportImages(event) {
   }
 }
 
+async function refreshAtlasPicker() {
+  const token = ++state.atlas.token;
+  const query = new URLSearchParams({
+    q: $("#atlas-search").value,
+    kind: $("#atlas-kind").value,
+    limit: "100",
+  });
+  const result = await api(`/assets?${query}`);
+  if (token !== state.atlas.token) return;
+  state.atlas.picker = result.items;
+  state.atlas.pickerTotal = result.total;
+  rememberAssets(result.items);
+  renderAtlasPicker();
+}
+
+function renderAtlasPicker() {
+  const chosen = state.atlas.chosen;
+  const limit = state.config?.max_atlas_assets ?? 64;
+  $("#atlas-picker").innerHTML = state.atlas.picker.length ? state.atlas.picker.map(asset => `
+    <article class="atlas-asset ${chosen.has(asset.id) ? "selected" : ""}">
+      <label class="asset-checkbox"><input type="checkbox" data-atlas-select="${asset.id}" aria-label="选择 ${escapeHtml(asset.name)}" ${chosen.has(asset.id) ? "checked" : ""}></label>
+      <img src="${asset.thumbnail_url}" alt="${escapeHtml(asset.name)}" loading="lazy">
+      <div class="atlas-asset-info"><h3 title="${escapeHtml(asset.name)}">${escapeHtml(asset.name)}</h3><p>${asset.width} × ${asset.height}</p></div>
+    </article>`).join("") : '<div class="full-empty">没有匹配的素材，先导入几张带透明边的小图吧。</div>';
+  $("#atlas-selected-count").textContent = chosen.size;
+  $$("[data-atlas-select]").forEach(input => input.addEventListener("change", () => {
+    if (input.checked) {
+      if (chosen.size >= limit) {
+        input.checked = false;
+        toast(`一次最多制作 ${limit} 张素材的图集。`, "error");
+        return;
+      }
+      chosen.add(input.dataset.atlasSelect);
+    } else chosen.delete(input.dataset.atlasSelect);
+    markAtlasStale();
+    renderAtlasPicker();
+  }));
+}
+
+function readAtlasOptions() {
+  const integer = (selector, label, min, max) => {
+    const input = $(selector);
+    const value = Number(input.value);
+    if (!input.value.trim() || !Number.isInteger(value) || value < min || value > max) {
+      input.reportValidity();
+      throw new Error(`请检查“${label}”：需为 ${min}–${max} 的整数。`);
+    }
+    return value;
+  };
+  return {
+    asset_ids: [...state.atlas.chosen],
+    canvas_width: integer("#atlas-width", "画布宽度", 1, 8192),
+    canvas_height: integer("#atlas-height", "画布高度", 1, 8192),
+    padding: integer("#atlas-padding", "图块间距", 0, 256),
+    trim_transparent: $("#atlas-trim").checked,
+    allow_rotation: $("#atlas-rotate").checked,
+  };
+}
+
+function atlasSignature(options) {
+  return JSON.stringify(options);
+}
+
+function setAtlasStatus(message, kind = "empty") {
+  const element = $("#atlas-status");
+  element.className = `atlas-status ${kind}`;
+  element.textContent = message;
+}
+
+async function renderAtlasPreview(plan) {
+  const canvas = $("#atlas-canvas");
+  const wrap = $("#atlas-canvas-wrap");
+  wrap.hidden = false;
+  const maxSide = 560;
+  const scale = Math.min(maxSide / plan.canvas.width, maxSide / plan.canvas.height, 1);
+  canvas.width = Math.max(1, Math.round(plan.canvas.width * scale));
+  canvas.height = Math.max(1, Math.round(plan.canvas.height * scale));
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#f2f5ec";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = "#c6d2b8";
+  ctx.lineWidth = 1;
+  const cell = 24 * scale;
+  for (let x = cell; x < canvas.width; x += cell) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+  }
+  for (let y = cell; y < canvas.height; y += cell) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+  }
+  const loads = plan.frames.map(frame => new Promise(resolve => {
+    const image = new Image();
+    let settled = false;
+    const done = value => { if (!settled) { settled = true; resolve(value); } };
+    image.onload = () => done({ frame, image });
+    image.onerror = () => done({ frame, image: null });
+    image.src = frame.thumbnail_url;
+    setTimeout(() => done({ frame, image: null }), 4000);
+  }));
+  const drawn = await Promise.all(loads);
+  drawn.forEach(({ frame, image }, index) => {
+    const f = frame.frame;
+    const x = f.x * scale, y = f.y * scale, w = f.w * scale, h = f.h * scale;
+    if (image) {
+      ctx.save();
+      if (frame.rotated) {
+        ctx.translate(x + w, y);
+        ctx.rotate(Math.PI / 2);
+        ctx.drawImage(image, 0, 0, h, w);
+        ctx.restore();
+      } else {
+        ctx.drawImage(image, x, y, w, h);
+      }
+    } else {
+      ctx.fillStyle = "#d9e2cb";
+      ctx.fillRect(x, y, w, h);
+    }
+    ctx.strokeStyle = frame.rotated ? "#b17e48" : "#5c8141";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x + 0.5, y + 0.5, Math.max(1, w - 1), Math.max(1, h - 1));
+    ctx.fillStyle = "#214733";
+    ctx.font = "11px sans-serif";
+    ctx.fillText(String(index + 1), x + 4, y + 13);
+  });
+  const occupied = plan.frames.reduce((sum, frame) => sum + frame.frame.w * frame.frame.h, 0);
+  const area = plan.canvas.width * plan.canvas.height;
+  $("#atlas-summary").innerHTML = `<dl>
+    <dt>画布尺寸</dt><dd>${plan.canvas.width} × ${plan.canvas.height} px</dd>
+    <dt>图块数量</dt><dd>${plan.sprite_count} 张（全部放置成功）</dd>
+    <dt>实际占用区域</dt><dd>${plan.used.width} × ${plan.used.height} px</dd>
+    <dt>面积利用率</dt><dd>${(occupied / area * 100).toFixed(1)}%</dd>
+    <dt>去透明空边</dt><dd>${plan.trim_transparent ? "开启" : "关闭"}</dd>
+    <dt>允许旋转</dt><dd>${plan.allow_rotation ? "开启" : "关闭"}</dd>
+  </dl>`;
+  $("#atlas-frame-list").innerHTML = plan.frames.map((frame, index) => `
+    <div class="atlas-frame-row">
+      <span class="frame-index">${index + 1}</span>
+      <img src="${frame.thumbnail_url}" alt="">
+      <div class="frame-meta">
+        <strong title="${escapeHtml(frame.name)}">${escapeHtml(frame.name)}</strong>
+        <p>位置 (${frame.frame.x}, ${frame.frame.y}) · 块 ${frame.frame.w}×${frame.frame.h} · 原图 ${frame.source_size.w}×${frame.source_size.h}</p>
+        <p class="frame-flags">${frame.rotated ? '<span class="flag rotated">已旋转 90°</span>' : ""}${frame.trimmed ? '<span class="flag trimmed">已去空边</span>' : '<span class="flag plain">未裁切</span>'}</p>
+      </div>
+    </div>`).join("");
+}
+
+async function previewAtlas() {
+  if (state.atlas.busy) return;
+  const options = readAtlasOptions();
+  if (!options.asset_ids.length) throw new Error("请先选择至少一张素材。");
+  state.atlas.busy = true;
+  $("#atlas-preview-button").disabled = true;
+  try {
+    const plan = await api("/atlases/preview", { method: "POST", body: options });
+    state.atlas.plan = plan;
+    state.atlas.planSignature = atlasSignature(options);
+    state.atlas.dirty = false;
+    setAtlasStatus(`排布成功：${plan.sprite_count} 张素材全部放入画布，可以下载。`, "success");
+    await renderAtlasPreview(plan);
+    $("#atlas-download-button").disabled = false;
+  } catch (error) {
+    state.atlas.plan = null;
+    state.atlas.dirty = true;
+    $("#atlas-download-button").disabled = true;
+    $("#atlas-canvas-wrap").hidden = true;
+    $("#atlas-summary").innerHTML = "";
+    $("#atlas-frame-list").innerHTML = "";
+    setAtlasStatus(error.message, "error");
+  } finally {
+    state.atlas.busy = false;
+    $("#atlas-preview-button").disabled = false;
+  }
+}
+
+function markAtlasStale() {
+  state.atlas.dirty = true;
+  $("#atlas-download-button").disabled = true;
+  if (state.atlas.plan) setAtlasStatus("素材或排布参数已变更，请重新生成排布预览。", "empty");
+}
+
+async function downloadAtlas() {
+  if (!state.atlas.plan || state.atlas.dirty) {
+    toast("参数或素材已变更，请重新生成排布预览。", "error");
+    return;
+  }
+  const button = $("#atlas-download-button");
+  button.disabled = true;
+  try {
+    const result = await api("/atlases", { method: "POST", body: JSON.parse(state.atlas.planSignature) });
+    const link = document.createElement("a");
+    link.href = result.export.url;
+    link.download = result.export.download_name;
+    link.click();
+    const renamed = result.manifest.name_warnings.length;
+    toast(`图集 ZIP 已生成 · ${result.manifest.sprite_count} 张素材${renamed ? `，${renamed} 个同名素材已自动改名` : ""}`);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function showSystem() {
   $("#system-dialog").showModal();
   $("#system-content").innerHTML = '<p class="muted">正在读取运行状态…</p>';
@@ -626,6 +831,18 @@ function bindEvents() {
     } finally { $("#submit-job").disabled = false; }
   });
   on("#system-button", "click", showSystem);
+  on("#atlas-upload", "click", () => $("#file-input").click());
+  on("#atlas-preview-button", "click", previewAtlas);
+  on("#atlas-download-button", "click", downloadAtlas);
+  let atlasSearchTimeout;
+  on("#atlas-search", "input", () => {
+    clearTimeout(atlasSearchTimeout);
+    atlasSearchTimeout = setTimeout(() => refreshAtlasPicker().catch(error => toast(error.message, "error")), 250);
+  });
+  on("#atlas-kind", "change", () => refreshAtlasPicker());
+  ["#atlas-width", "#atlas-height", "#atlas-padding", "#atlas-trim", "#atlas-rotate"].forEach(selector => {
+    $(selector).addEventListener("input", markAtlasStale);
+  });
   document.addEventListener("keydown", event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "o") {
       event.preventDefault(); $("#file-input").click();

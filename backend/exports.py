@@ -123,6 +123,6 @@ class ExportService:
         path = self.settings.exports / record["filename"]
         if not path.exists():
             raise StudioError("导出文件丢失，请重新导出", status=410)
-        mime = "application/zip" if record["kind"] == "archive" else MIMETYPES[record["options"]["format"]]
+        mime = "application/zip" if record["kind"] in {"archive", "atlas"} else MIMETYPES[record["options"]["format"]]
         return path, record, mime
 

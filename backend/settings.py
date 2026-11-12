@@ -15,6 +15,7 @@ class Settings:
     max_dimension: int = 8192
     max_batch: int = 24
     max_steps: int = 12
+    max_atlas_assets: int = 64
     workers: int = 1
 
     @classmethod
@@ -45,6 +46,7 @@ class Settings:
             "max_dimension": self.max_dimension,
             "max_batch": self.max_batch,
             "max_steps": self.max_steps,
+            "max_atlas_assets": self.max_atlas_assets,
             "formats": ["PNG", "JPEG", "WEBP", "BMP", "TIFF", "GIF"],
             "storage": "JSON",
         }

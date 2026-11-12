@@ -35,6 +35,8 @@
 | POST | `/exports` | 单图实际格式编码 |
 | POST | `/exports/archive` | 多图编码并生成 ZIP |
 | GET | `/exports/{id}/download` | 下载导出产物 |
+| POST | `/atlases/preview` | 计算图集排布并返回每帧位置，不写入任何文件 |
+| POST | `/atlases` | 制作图集，返回图集 PNG 与位置说明打包的 ZIP |
 | GET | `/events` | 最近 100 条操作记录 |
 | GET | `/backup` | 下载完整 JSON 元数据快照 |
 
@@ -89,6 +91,33 @@
 ```
 
 支持 `PNG/JPEG/WEBP/BMP/TIFF/GIF`。响应的 `url` 可直接下载。ZIP 接口将 `asset_id` 改为 `asset_ids` 数组，压缩包中包含安全命名的图片和 `manifest.json`。
+
+## 图集请求
+
+```json
+{
+  "asset_ids": ["素材1的id", "素材2的id"],
+  "canvas_width": 1024,
+  "canvas_height": 1024,
+  "padding": 2,
+  "trim_transparent": true,
+  "allow_rotation": false
+}
+```
+
+- `asset_ids` 为 1–64 个素材 ID，重复 ID 会被拒绝；`canvas_width/canvas_height` 为 1–8192 的整数，总像素不超过 1600 万；`padding` 为 0–256 的整数。
+- `trim_transparent` 开启时自动裁去每张图四周的透明空边；无论该开关是否开启，完全透明、没有可见像素的素材都会以 `empty_sprite` 错误拒绝整次请求，不会进入成品。
+- `allow_rotation` 开启后允许把素材顺时针旋转 90° 装箱，旋转状态逐帧记录。
+- 任一素材放不进目标画布时返回 `atlas_overflow`，错误详情给出无法放置的素材 ID 与名称；预览和制作都不会产生任何文件或导出记录，杜绝“少图却成功”。
+
+`/atlases/preview` 返回画布尺寸、实际占用区域、利用率以及每帧的 `frame`（图集内矩形）、`rotated`、`trimmed`、`trim_box`（相对原图的裁切偏移与内容尺寸）和 `source_size`（原图尺寸），用于前端绘制排布。
+
+`/atlases` 成功后返回 201，其导出 ZIP 内固定包含两个文件：
+
+- `atlas.png`：透明背景的图集图像，尺寸即请求画布。
+- `atlas-manifest.json`：位置说明，逐帧记录素材 ID、名称、唯一名称（同名素材自动加短 ID 后缀并在 `name_warnings` 中列出）、`frame`、`rotated`、`trimmed`、`source_size` 与 `trim_box`。
+
+还原方法：按 `frame` 从图集取出图块；`rotated` 为真时逆时针旋转 90° 还原内容方向；再新建 `source_size` 大小的透明画布，按 `trim_box.x/y` 贴回内容，即得到与原图同尺寸、同方向、同像素的结果。
 
 ## 状态码
 

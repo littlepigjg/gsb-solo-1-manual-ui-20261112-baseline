@@ -26,7 +26,7 @@ def ok(data=None, status=200):
 
 @api.get("/health")
 def health():
-    return ok({"status": "ready", "version": "1.0.0", "storage": "JSON", "features": 10, "operations": len(service("registry").specs)})
+    return ok({"status": "ready", "version": "1.0.0", "storage": "JSON", "features": 11, "operations": len(service("registry").specs)})
 
 
 @api.get("/config")
@@ -212,6 +212,23 @@ def export_archive():
 def export_download(export_id):
     path, record, mime = service("exports").file(export_id)
     return send_file(path, mimetype=mime, as_attachment=True, download_name=record["download_name"])
+
+
+@api.post("/atlases/preview")
+def atlas_preview():
+    data = payload({"asset_ids", "canvas_width", "canvas_height", "padding", "trim_transparent", "allow_rotation"})
+    return ok(service("atlases").preview(data))
+
+
+@api.post("/atlases")
+def atlas_create():
+    data = payload({"asset_ids", "canvas_width", "canvas_height", "padding", "trim_transparent", "allow_rotation"})
+    record, manifest, used = service("atlases").create(data)
+    return ok({
+        "export": record,
+        "manifest": manifest,
+        "used": used,
+    }, 201)
 
 
 @api.get("/events")
