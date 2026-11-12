@@ -1,8 +1,18 @@
 """JSON repository with serialized read/modify/write and atomic replacement.
 
 The local server owns one process. All HTTP and worker threads share this
-repository. A backup is retained before each successful replacement. Invalid
-JSON is never replaced silently: a valid backup is recovered or startup fails.
+repository.
+
+Durability rules:
+
+* Every mutation is applied to a deep copy of the last durable state. The
+  in-memory cache is swapped only after the new state has been written and
+  fsynced to disk, so a failed save never leaves unsaved edits in the cache.
+  A later successful save therefore cannot smuggle a failed edit to disk.
+* A valid backup (``.json.bak``) is retained before each replacement.
+* When the primary file is corrupt or unreadable, the last valid backup is
+  restored on the next read. If no valid backup exists, the failure is raised
+  explicitly instead of serving an empty document or stale cache data.
 """
 import copy
 import json
@@ -29,10 +39,11 @@ class JsonStore:
         self.directory = directory
         self.directory.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
+        self._decoded = {}
         for collection in self.COLLECTIONS:
             with self.lock:
                 if not self._path(collection).exists():
-                    self._write(collection, {"schema_version": 1, "records": {}})
+                    self._commit(collection, {"schema_version": 1, "records": {}})
                 else:
                     self._read(collection)
 
@@ -48,33 +59,52 @@ class JsonStore:
             raise ValueError("Unsupported JSON schema")
         return data
 
+    def _recover(self, collection, path):
+        """Restore a corrupt primary file from its backup.
+
+        Returns the decoded backup data. Raises ``RuntimeError`` when no valid
+        backup is available so callers never mistake an empty store for a
+        healthy one.
+        """
+        backup = path.with_suffix(".json.bak")
+        if not backup.exists():
+            raise RuntimeError(f"JSON 数据损坏且没有可用备份：{path}")
+        try:
+            data = self._decode(backup)
+        except (ValueError, OSError) as error:
+            raise RuntimeError(
+                f"JSON 数据损坏，且备份同样无法读取：{path}"
+            ) from error
+        recovery = path.with_suffix(".json.recovery")
+        shutil.copy2(backup, recovery)
+        os.replace(recovery, path)
+        self._decoded[collection] = data
+        return data
+
     def _read(self, collection):
-        cache = self.__dict__.setdefault("_decoded", {})
+        cache = self._decoded
         if collection in cache:
             return cache[collection]
         path = self._path(collection)
         try:
             data = self._decode(path)
-            cache[collection] = data
-            return data
         except (ValueError, OSError):
-            backup = path.with_suffix(".json.bak")
-            if not backup.exists():
-                raise RuntimeError(f"JSON 数据损坏且没有可用备份：{path}")
-            data = self._decode(backup)
-            recovery = path.with_suffix(".json.recovery")
-            shutil.copy2(backup, recovery)
-            os.replace(recovery, path)
-            return data
-
-    def _write(self, collection, data):
-        cache = self.__dict__.setdefault("_decoded", {})
+            data = self._recover(collection, path)
         cache[collection] = data
+        return data
+
+    def _commit(self, collection, new_data):
+        """Durably persist ``new_data`` and only then swap the cache.
+
+        The caller must build ``new_data`` from a deep copy of the previously
+        durable state. On any disk error the existing cache stays untouched,
+        so failed edits never become visible through later reads.
+        """
         path = self._path(collection)
         temporary = path.with_suffix(f".{new_id()}.tmp")
         try:
             with temporary.open("w", encoding="utf-8", newline="\n") as stream:
-                json.dump(data, stream, ensure_ascii=False, indent=2, allow_nan=False)
+                json.dump(new_data, stream, ensure_ascii=False, indent=2, allow_nan=False)
                 stream.write("\n")
                 stream.flush()
                 os.fsync(stream.fileno())
@@ -83,6 +113,8 @@ class JsonStore:
             os.replace(temporary, path)
         finally:
             temporary.unlink(missing_ok=True)
+        self._decoded[collection] = new_data
+        return new_data
 
     def all(self, collection):
         with self.lock:
@@ -106,8 +138,9 @@ class JsonStore:
             record["updated_at"] = utc_now()
             if record["id"] in data["records"]:
                 raise Conflict("记录已存在")
-            data["records"][record["id"]] = record
-            self._write(collection, data)
+            new_data = copy.deepcopy(data)
+            new_data["records"][record["id"]] = record
+            self._commit(collection, new_data)
             return copy.deepcopy(record)
 
     def update(self, collection, record_id, changes):
@@ -115,13 +148,14 @@ class JsonStore:
             data = self._read(collection)
             if record_id not in data["records"]:
                 raise MissingRecord(collection, record_id)
-            record = data["records"][record_id]
             changes = copy.deepcopy(changes)
             changes.pop("id", None)
             changes.pop("created_at", None)
+            new_data = copy.deepcopy(data)
+            record = new_data["records"][record_id]
             record.update(changes)
             record["updated_at"] = utc_now()
-            self._write(collection, data)
+            self._commit(collection, new_data)
             return copy.deepcopy(record)
 
     def delete(self, collection, record_id):
@@ -129,8 +163,9 @@ class JsonStore:
             data = self._read(collection)
             if record_id not in data["records"]:
                 raise MissingRecord(collection, record_id)
-            removed = data["records"].pop(record_id)
-            self._write(collection, data)
+            new_data = copy.deepcopy(data)
+            removed = new_data["records"].pop(record_id)
+            self._commit(collection, new_data)
             return copy.deepcopy(removed)
 
     def prune(self, collection, maximum):
@@ -142,8 +177,9 @@ class JsonStore:
                 reverse=True,
             )
             if len(records) > maximum:
-                data["records"] = {item["id"]: item for item in records[:maximum]}
-                self._write(collection, data)
+                new_data = copy.deepcopy(data)
+                new_data["records"] = {item["id"]: item for item in records[:maximum]}
+                self._commit(collection, new_data)
 
     def event(self, action, message, details=None):
         self.insert("events", {
@@ -163,4 +199,3 @@ class JsonStore:
                     for name in sorted(self.COLLECTIONS)
                 },
             }
-
