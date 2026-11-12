@@ -528,6 +528,36 @@ async function exportImages(event) {
   }
 }
 
+async function exportProjectPackage() {
+  const ids = [...state.selected];
+  if (!ids.length) throw new Error("请先在素材库勾选要带走的素材。");
+  const record = await api("/project-packages/export", { method: "POST", body: { asset_ids: ids } });
+  const link = document.createElement("a");
+  link.href = record.url;
+  link.download = record.download_name;
+  link.click();
+  toast(`项目包已生成：自动包含 ${record.included_count} 个素材版本与完整处理历史 · ${humanBytes(record.bytes)}`);
+}
+
+async function importProjectPackage(file) {
+  if (!file) return;
+  if (!/\.zip$/i.test(file.name) && file.type !== "application/zip") {
+    throw new Error("项目包必须是 ZIP 文件。");
+  }
+  const body = new FormData();
+  body.append("file", file);
+  const result = await api("/project-packages/import", { method: "POST", body });
+  rememberAssets(result.records || []);
+  await refreshLibrary();
+  await refreshStats();
+  renderFilmstrip();
+  if (result.primary_id) await selectAsset(result.primary_id, true);
+  const conflicts = result.id_conflicts
+    ? `，${result.id_conflicts} 个标识冲突已自动避让`
+    : "";
+  toast(`已导入 ${result.imported} 个素材版本，历史关系已保留${conflicts}`);
+}
+
 async function showSystem() {
   $("#system-dialog").showModal();
   $("#system-content").innerHTML = '<p class="muted">正在读取运行状态…</p>';
@@ -595,6 +625,13 @@ function bindEvents() {
   on("#go-batch", "click", () => { if (!state.selected.size && state.current) state.selected.add(state.current.id); setView("jobs"); });
   on("#library-batch", "click", () => setView("jobs"));
   on("#library-export", "click", () => openExport([...state.selected]));
+  on("#library-project-export", "click", exportProjectPackage);
+  on("#library-project-import", "click", () => $("#package-input").click());
+  on("#package-input", "change", async event => {
+    const file = event.target.files[0];
+    event.target.value = "";
+    await importProjectPackage(file);
+  });
   on("#export-button", "click", () => openExport([requireImage().id]));
   on("#export-form", "submit", exportImages);
   on("#export-quality", "input", event => { $("#quality-value").textContent = event.target.value; });
@@ -640,7 +677,14 @@ function bindEvents() {
   document.addEventListener("drop", event => {
     if (!event.dataTransfer.files.length) return;
     event.preventDefault(); dragDepth = 0; $("#drop-overlay").hidden = true;
-    importFiles([...event.dataTransfer.files]).catch(error => toast(error.message, "error"));
+    const files = [...event.dataTransfer.files];
+    const packageFile = files.find(file => /\.zip$/i.test(file.name) || file.type === "application/zip");
+    if (packageFile) {
+      if (files.length > 1) toast("项目包请单独拖入，其他文件已忽略。", "info");
+      importProjectPackage(packageFile).catch(error => toast(error.message, "error"));
+      return;
+    }
+    importFiles(files).catch(error => toast(error.message, "error"));
   });
 }
 

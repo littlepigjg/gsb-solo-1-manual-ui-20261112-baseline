@@ -16,6 +16,9 @@ class Settings:
     max_batch: int = 24
     max_steps: int = 12
     workers: int = 1
+    max_package_bytes: int = 512 * 1024 * 1024
+    max_package_member_bytes: int = 128 * 1024 * 1024
+    max_package_assets: int = 512
 
     @classmethod
     def from_environment(cls, root=None):
@@ -45,6 +48,7 @@ class Settings:
             "max_dimension": self.max_dimension,
             "max_batch": self.max_batch,
             "max_steps": self.max_steps,
+            "max_package_mb": self.max_package_bytes // (1024 * 1024),
             "formats": ["PNG", "JPEG", "WEBP", "BMP", "TIFF", "GIF"],
             "storage": "JSON",
         }

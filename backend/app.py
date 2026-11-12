@@ -12,6 +12,7 @@ from .assets import AssetService
 from .processing import ProcessingService
 from .jobs import JobService
 from .exports import ExportService
+from .project_packages import ProjectPackageService
 from .analysis import AnalysisService
 from .presets import PresetService
 from .samples import SampleService
@@ -28,6 +29,7 @@ def create_app(data_dir=None, testing=False):
     processing = ProcessingService(settings, store, assets, registry)
     jobs = JobService(settings, store, assets, processing)
     exports = ExportService(settings, store, assets, processing)
+    project_packages = ProjectPackageService(settings, store, assets, registry)
     presets = PresetService(store, registry)
     services = {
         "settings": settings,
@@ -37,6 +39,7 @@ def create_app(data_dir=None, testing=False):
         "processing": processing,
         "jobs": jobs,
         "exports": exports,
+        "project_packages": project_packages,
         "presets": presets,
         "analysis": AnalysisService(assets),
         "samples": SampleService(assets, store),
@@ -44,7 +47,7 @@ def create_app(data_dir=None, testing=False):
     }
     app = Flask(__name__, root_path=".", static_folder=str(PROJECT_ROOT / "frontend"), static_url_path="/static")
     app.config.update(
-        MAX_CONTENT_LENGTH=settings.max_upload_bytes + 1024 * 1024,
+        MAX_CONTENT_LENGTH=max(settings.max_upload_bytes, settings.max_package_bytes) + 1024 * 1024,
         TESTING=testing,
         JSON_SORT_KEYS=False,
     )

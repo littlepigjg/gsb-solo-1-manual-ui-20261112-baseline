@@ -82,7 +82,7 @@
 
       <section id="library-view" class="view">
         <div class="page-heading"><div><div class="eyebrow">YOUR VISUAL COLLECTION</div><h1>把灵感，收在这里<span>。</span></h1><p>原始素材与处理副本，始终清晰可寻。</p></div><button id="library-upload" class="button dark"><span data-icon="plus"></span>导入素材</button></div>
-        <div class="library-toolbar"><div class="search-field"><span data-icon="search"></span><input id="asset-search" placeholder="搜索图片名称…" aria-label="搜索图片名称"></div><select id="asset-kind" aria-label="图片类型"><option value="all">全部图片</option><option value="original">导入原图</option><option value="result">处理副本</option><option value="sample">示例素材</option></select><button id="select-all" class="button subtle small">选择当前页</button><span id="selection-count">已选 0 张</span><button id="library-batch" class="button outline small">批量处理</button><button id="library-export" class="button dark small">打包导出</button></div>
+        <div class="library-toolbar"><div class="search-field"><span data-icon="search"></span><input id="asset-search" placeholder="搜索图片名称…" aria-label="搜索图片名称"></div><select id="asset-kind" aria-label="图片类型"><option value="all">全部图片</option><option value="original">导入原图</option><option value="result">处理副本</option><option value="sample">示例素材</option></select><button id="select-all" class="button subtle small">选择当前页</button><span id="selection-count">已选 0 张</span><button id="library-batch" class="button outline small">批量处理</button><button id="library-export" class="button dark small">打包导出</button><button id="library-project-export" class="button subtle small" title="生成可迁移项目包，自动包含所选素材的原图与全部上游处理副本">导出项目包</button><button id="library-project-import" class="button outline small" title="导入另一份素材库导出的项目包，完整保留名称、处理信息和历史关系">导入项目包</button></div>
         <div id="asset-grid" class="asset-grid"></div><button id="load-more" class="button outline load-more" hidden>加载更多</button>
       </section>
 
@@ -94,6 +94,7 @@
   </div>
 
   <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff,image/gif" multiple hidden>
+  <input id="package-input" type="file" accept=".zip,application/zip" hidden>
   <div id="drop-overlay" class="drop-overlay" hidden><span data-icon="upload"></span><h2>松开鼠标，导入你的画面</h2><p>文件仅保存在本机</p></div>
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 

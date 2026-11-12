@@ -110,6 +110,28 @@ class JsonStore:
             self._write(collection, data)
             return copy.deepcopy(record)
 
+    def insert_many(self, collection, records):
+        """Insert all records in one atomic JSON write, or leave the collection untouched."""
+        with self.lock:
+            data = self._read(collection)
+            prepared = []
+            now = utc_now()
+            seen = set()
+            for record in records:
+                record = copy.deepcopy(record)
+                record.setdefault("id", new_id())
+                record.setdefault("created_at", now)
+                record["updated_at"] = now
+                record_id = record["id"]
+                if record_id in seen or record_id in data["records"]:
+                    raise Conflict(f"记录已存在：{record_id}")
+                seen.add(record_id)
+                prepared.append(record)
+            for record in prepared:
+                data["records"][record["id"]] = record
+            self._write(collection, data)
+            return copy.deepcopy(prepared)
+
     def update(self, collection, record_id, changes):
         with self.lock:
             data = self._read(collection)

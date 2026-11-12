@@ -34,7 +34,9 @@
 | POST | `/jobs/{id}/cancel` | 申请取消，body 为 `{}` |
 | POST | `/exports` | 单图实际格式编码 |
 | POST | `/exports/archive` | 多图编码并生成 ZIP |
-| GET | `/exports/{id}/download` | 下载导出产物 |
+| POST | `/project-packages/export` | 导出可迁移项目包（自动包含所选素材的全部上游历史） |
+| POST | `/project-packages/import` | 校验并整包导入项目包，任一张图片或记录损坏都不会写入素材库 |
+| GET | `/exports/{id}/download` | 下载导出产物（普通编码、批量 ZIP 或项目包 ZIP） |
 | GET | `/events` | 最近 100 条操作记录 |
 | GET | `/backup` | 下载完整 JSON 元数据快照 |
 
@@ -89,6 +91,22 @@
 ```
 
 支持 `PNG/JPEG/WEBP/BMP/TIFF/GIF`。响应的 `url` 可直接下载。ZIP 接口将 `asset_id` 改为 `asset_ids` 数组，压缩包中包含安全命名的图片和 `manifest.json`。
+
+## 项目包迁移
+
+项目包用于把素材带到另一台电脑并继续原来的处理历史。导出请求只需要勾选的素材标识：
+
+```json
+{ "asset_ids": ["结果图片id"] }
+```
+
+服务会自动把该结果的全部上游版本（直到导入原图）加入包内。项目包是 ZIP，结构固定为 `manifest.json` 与 `assets/<素材id>.png`。清单记录每个素材的名称、类型、尺寸、`sha256`、`parent_id`、`root_id`、完整 `steps`、标签、收藏状态和处理元数据。
+
+导入使用 multipart 的 `file` 字段上传项目包。服务在写入任何文件或记录前完成以下校验：ZIP 路径安全且无重复条目；清单格式与版本受支持；每个素材记录字段有效、处理步骤可识别、历史关系闭合；每张 PNG 都存在、可解码、尺寸与记录一致，且字节数和 `sha256` 完全匹配。缩略图由校验通过的图片重新生成。
+
+任一校验失败都会返回 `400` 和 `invalid_project_package`，错误消息说明具体素材或文件，整个包被拒绝，素材库和媒体目录保持导入前状态。校验全部通过后，所有图片先进入暂存目录，再一次性移动并以单次 JSON 原子写入提交，避免导入一半。
+
+导入不会因为重名或标识碰撞覆盖已有素材：名称原样保留并允许重复；包内标识若与目标库的记录或媒体文件冲突，会为该素材分配新标识，并同步重映射 `parent_id` 和 `root_id`。响应包含 `imported`、`asset_ids`、`root_ids`、`selection_ids`、`primary_id`、`id_conflicts`、`name_conflicts` 以及新素材的完整记录。
 
 ## 状态码
 
