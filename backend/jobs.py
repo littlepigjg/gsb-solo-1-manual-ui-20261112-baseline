@@ -22,13 +22,19 @@ class JobService:
         self.executor = ThreadPoolExecutor(max_workers=settings.workers, thread_name_prefix="studio-job")
         self.cancellations = {}
         self.futures = {}
+        self.closing = False
         for job in self.store.all("jobs"):
             if job["status"] in ACTIVE:
+                saved = len(job.get("results", []))
+                total = job.get("total", len(job.get("asset_ids", [])))
+                message = f"服务重启中断了任务；已保存 {saved} 张结果（共 {total} 张），可重新提交。"
                 self.store.update("jobs", job["id"], {
                     "status": "interrupted",
                     "finished_at": utc_now(),
-                    "message": "服务重启中断了任务；已完成的结果仍然保留，可重新提交。",
+                    "current_asset_id": None,
+                    "message": message,
                 })
+                self.store.event("batch", message, {"job_id": job["id"]})
 
     def submit(self, asset_ids, steps, title="批量图像处理"):
         asset_ids = list_value(asset_ids, "图片列表", maximum=self.settings.max_batch)
@@ -66,11 +72,14 @@ class JobService:
             self._execute(job_id, cancellation)
         except Exception:
             LOGGER.exception("Batch job failed: %s", job_id)
-            self.store.update("jobs", job_id, {
-                "status": "failed",
-                "finished_at": utc_now(),
-                "message": "任务异常结束，请查看服务日志。",
-            })
+            with self.lock:
+                record = self.store.get("jobs", job_id)
+                if record["status"] not in TERMINAL:
+                    self.store.update("jobs", job_id, {
+                        "status": "failed",
+                        "finished_at": utc_now(),
+                        "message": "任务异常结束，请查看服务日志。",
+                    })
         finally:
             with self.lock:
                 self.cancellations.pop(job_id, None)
@@ -80,9 +89,12 @@ class JobService:
         record = self.store.get("jobs", job_id)
         results = []
         errors = []
-        self.store.update("jobs", job_id, {
-            "status": "running", "started_at": utc_now(), "message": "正在处理",
-        })
+        with self.lock:
+            # A job cancelled while queued must not flap back to "running".
+            if not cancellation.is_set():
+                self.store.update("jobs", job_id, {
+                    "status": "running", "started_at": utc_now(), "message": "正在处理",
+                })
         for index, asset_id in enumerate(record["asset_ids"]):
             if cancellation.is_set():
                 break
@@ -113,23 +125,37 @@ class JobService:
                 "done": index + 1,
                 "progress": round((index + 1) / record["total"] * 100, 1),
             })
-        if cancellation.is_set():
-            status = "cancelled"
-            message = "已取消；已完成的处理副本仍然保留。"
-        elif errors:
-            status = "partial" if results else "failed"
-            message = f"成功 {len(results)} 张，失败 {len(errors)} 张"
-        else:
-            status = "completed"
-            message = f"已完成 {len(results)} 张图片"
-        self.store.update("jobs", job_id, {
-            "status": status,
-            "message": message,
-            "results": results,
-            "errors": errors,
-            "finished_at": utc_now(),
-            "current_asset_id": None,
-        })
+        # The final status is decided and written under the same lock that
+        # cancel() uses, so an accepted cancellation can never be overwritten
+        # by a late completion, and a finished job can never be dragged back
+        # to "cancelling".
+        with self.lock:
+            done = len(results) + len(errors)
+            if cancellation.is_set():
+                if self.closing:
+                    status = "interrupted"
+                    message = f"服务停止，任务中断；已保存 {len(results)} 张结果，可重新提交剩余图片。"
+                else:
+                    status = "cancelled"
+                    message = f"已取消；已保存 {len(results)} 张结果"
+                    if errors:
+                        message += f"，{len(errors)} 张失败"
+                    message += f"，{record['total'] - done} 张未处理。"
+            elif errors:
+                status = "partial" if results else "failed"
+                message = f"成功 {len(results)} 张，失败 {len(errors)} 张"
+            else:
+                status = "completed"
+                message = f"已完成 {len(results)} 张图片"
+            self.store.update("jobs", job_id, {
+                "status": status,
+                "message": message,
+                "results": results,
+                "errors": errors,
+                "done": done,
+                "finished_at": utc_now(),
+                "current_asset_id": None,
+            })
         self.store.event("batch", message, {"job_id": job_id})
 
     def get(self, job_id):
@@ -144,7 +170,8 @@ class JobService:
     def cancel(self, job_id):
         with self.lock:
             record = self.get(job_id)
-            if record["status"] in TERMINAL:
+            # Repeated cancellation is a no-op: no extra writes or events.
+            if record["status"] in TERMINAL or record["status"] == "cancelling":
                 return record
             flag = self.cancellations.get(job_id)
             if flag:
@@ -155,7 +182,7 @@ class JobService:
 
     def shutdown(self):
         with self.lock:
+            self.closing = True
             for flag in self.cancellations.values():
                 flag.set()
         self.executor.shutdown(wait=True, cancel_futures=False)
-
