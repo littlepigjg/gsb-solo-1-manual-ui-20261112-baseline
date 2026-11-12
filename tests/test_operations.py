@@ -90,3 +90,58 @@ def test_deterministic_grain(registry, sample_image, tmp_path):
 def test_memory_dimension_guard(registry, sample_image, tmp_path):
     with pytest.raises(StudioError):
         registry.apply(sample_image, {"operation": "resize_exact", "params": {"width": 8192, "height": 8192}}, OperationContext(Settings(tmp_path)))
+
+
+GRADIENT_OPERATIONS = ["edge_sobel", "edge_prewitt", "edge_scharr"]
+EDGE_SPECS = [spec for spec in OPERATIONS if spec["category"] == "edge"]
+
+
+def diagonal_ramp_image():
+    # True gradient magnitude is identical in every interior row; the bright
+    # band gives normalization a strong edge to lock onto.
+    width, height = 60, 100
+    x, y = np.meshgrid(np.arange(width), np.arange(height))
+    pixels = ((x + y) % 256).astype(np.uint8)
+    pixels[50:60] = 200
+    return Image.fromarray(pixels, "L").convert("RGBA")
+
+
+@pytest.mark.parametrize("operation", GRADIENT_OPERATIONS)
+def test_gradient_edges_have_no_band_seams(registry, operation, tmp_path):
+    context = OperationContext(Settings(tmp_path))
+    output = registry.apply(diagonal_ramp_image(), {"operation": operation, "params": {}}, context)
+    array = np.asarray(output.convert("L"))
+    reference = array[5, 1:-1]
+    for row in (10, 31, 32, 33, 63, 64, 95):
+        assert np.array_equal(array[row, 1:-1], reference), f"row {row} breaks the uniform gradient"
+    assert array[50].max() > reference.max()
+
+
+@pytest.mark.parametrize("operation", GRADIENT_OPERATIONS)
+def test_gradient_gain_scales_whole_image_uniformly(registry, operation, tmp_path):
+    context = OperationContext(Settings(tmp_path))
+    image = diagonal_ramp_image()
+    base = np.asarray(registry.apply(image, {"operation": operation, "params": {"gain": 1}}, context).convert("L"), dtype=np.float32)
+    doubled = np.asarray(registry.apply(image, {"operation": operation, "params": {"gain": 2}}, context).convert("L"), dtype=np.float32)
+    for row in (5, 33, 64, 95):
+        assert np.allclose(doubled[row, 1:-1], 2 * base[row, 1:-1], atol=1), f"row {row} not doubled"
+
+
+@pytest.mark.parametrize("operation", GRADIENT_OPERATIONS + ["edge_roberts", "edge_laplacian"])
+def test_edge_invert_complements_clipped_output(registry, operation, sample_image, tmp_path):
+    context = OperationContext(Settings(tmp_path))
+    plain = np.asarray(registry.apply(sample_image, {"operation": operation, "params": {"invert": False}}, context).convert("L"), dtype=np.int16)
+    inverted = np.asarray(registry.apply(sample_image, {"operation": operation, "params": {"invert": True}}, context).convert("L"), dtype=np.int16)
+    assert np.max(np.abs(plain + inverted - 255)) <= 1
+
+
+@pytest.mark.parametrize("size", [(1, 1), (1, 5), (5, 1), (2, 3)])
+@pytest.mark.parametrize("spec", EDGE_SPECS, ids=[spec["id"] for spec in EDGE_SPECS])
+def test_edge_operations_handle_tiny_images(registry, spec, size, tmp_path):
+    rng = np.random.default_rng(7)
+    pixels = rng.integers(0, 256, (size[1], size[0], 4), dtype=np.uint8)
+    image = Image.fromarray(pixels, "RGBA")
+    output = registry.apply(image, {"operation": spec["id"], "params": {}}, OperationContext(Settings(tmp_path)))
+    assert output.mode == "RGBA"
+    assert output.size == size
+    assert np.array_equal(np.asarray(output.getchannel("A")), pixels[..., 3])
