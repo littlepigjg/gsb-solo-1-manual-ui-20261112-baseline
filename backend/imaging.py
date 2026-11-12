@@ -85,6 +85,39 @@ def checked_size(width, height, context):
     return width, height
 
 
+def resize_premultiplied(image, size, resample=Image.Resampling.LANCZOS):
+    """Resize RGBA without letting invisible pixels bleed into visible edges.
+
+    Plain per-channel resampling mixes the RGB values of fully transparent
+    pixels into neighbouring semi-transparent pixels, leaving dark fringes.
+    Resizing the colour channels in premultiplied-alpha space (where
+    transparent pixels contribute zero) and un-premultiplying afterwards keeps
+    the visible colour intact at every opacity.
+    """
+    rgba = image.convert("RGBA")
+    if rgba.size == tuple(size):
+        return rgba.copy()
+    source = np.asarray(rgba).astype(np.float32) / 255.0
+    alpha = source[..., 3:4]
+    premultiplied = Image.fromarray(
+        np.round(source[..., :3] * alpha * 255.0).astype(np.uint8), "RGB"
+    )
+    alpha_plane = rgba.getchannel("A")
+    resized_rgb = premultiplied.resize(size, resample)
+    resized_alpha = alpha_plane.resize(size, resample)
+    rgb = np.asarray(resized_rgb).astype(np.float32)
+    alpha_out = np.asarray(resized_alpha).astype(np.float32) / 255.0
+    visible = alpha_out > 0.0
+    un_premultiplied = np.zeros_like(rgb)
+    for channel in range(3):
+        un_premultiplied[..., channel] = np.where(
+            visible, rgb[..., channel] / np.maximum(alpha_out, 1e-6), 0.0
+        )
+    un_premultiplied = np.clip(np.round(un_premultiplied), 0, 255).astype(np.uint8)
+    result = np.dstack((un_premultiplied, np.asarray(resized_alpha)))
+    return Image.fromarray(result, "RGBA")
+
+
 def convolution(array, kernel):
     kernel = np.asarray(kernel, dtype=np.float32)
     radius = kernel.shape[0] // 2

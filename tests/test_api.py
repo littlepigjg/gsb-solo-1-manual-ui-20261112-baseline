@@ -2,6 +2,7 @@ import io
 import json
 import time
 import zipfile
+import numpy as np
 import pytest
 from PIL import Image
 from backend.app import create_app
@@ -177,6 +178,42 @@ def test_png_export_retains_alpha(client, uploaded):
         assert image.mode == "RGBA"
         assert image.getpixel((0, 0))[3] == 0
         assert image.getpixel((0, 15))[3] == 120
+
+
+def test_resize_fill_preview_save_and_export_agree(client):
+    image = Image.new("RGBA", (9, 7), (0, 0, 0, 0))
+    for y in range(2, 5):
+        for x in range(3, 6):
+            image.putpixel((x, y), (255, 0, 0, 255))
+    image.putpixel((3, 2), (255, 0, 0, 128))
+    buffer = io.BytesIO()
+    image.save(buffer, "PNG")
+    buffer.seek(0)
+    asset = client.post("/api/assets", data={"file": (buffer, "alpha.png")}).json["data"]
+    steps = [{"operation": "resize_fill", "params": {
+        "width": 21, "height": 17, "anchor_x": 0, "anchor_y": 100,
+    }}]
+
+    preview = Image.open(io.BytesIO(client.post("/api/preview", json={
+        "asset_id": asset["id"], "steps": steps}).data))
+    assert preview.size == (21, 17)
+
+    saved_record = client.post("/api/process", json={
+        "asset_id": asset["id"], "steps": steps}).json["data"]
+    saved = Image.open(io.BytesIO(client.get(saved_record["url"]).data))
+    assert saved.size == (21, 17)
+
+    export_record = client.post("/api/exports", json={
+        "asset_id": saved_record["id"], "options": {"format": "PNG"}}).json["data"]
+    exported = Image.open(io.BytesIO(client.get(export_record["url"]).data))
+
+    assert preview.tobytes() == saved.tobytes() == exported.tobytes()
+    pixels = np.asarray(saved).reshape(-1, 4)
+    semi = pixels[(pixels[:, 3] > 0) & (pixels[:, 3] < 255)]
+    assert len(semi) > 0
+    assert (semi[:, 0] - np.maximum(semi[:, 1], semi[:, 2]) >= 240).all()
+    transparent = pixels[pixels[:, 3] == 0]
+    assert (transparent[:, :3] == 0).all()
 
 
 def test_json_persists_across_restart(app, uploaded):

@@ -2,7 +2,7 @@
 import math
 from PIL import Image, ImageOps, ImageChops, ImageDraw, ImageColor
 from ..errors import StudioError
-from ..imaging import checked_size, RESAMPLING
+from ..imaging import checked_size, RESAMPLING, resize_premultiplied
 
 
 def crop_rect(image, p, context):
@@ -108,14 +108,27 @@ def resize_fit(image, p, context):
 
 
 def resize_fill(image, p, context):
+    """Cover resize: scale uniformly to fill the target, then crop overflow.
+
+    The crop window is derived as clamped integer coordinates so it can never
+    leave the source (which would be padded with black transparent pixels),
+    and moving either anchor percentage shifts the window monotonically with
+    no jumps.  Colour is resampled in premultiplied-alpha space so RGB data
+    hidden behind transparent pixels cannot fringe the visible edges.
+    """
     size = checked_size(p["width"], p["height"], context)
-    scale = max(size[0] / image.width, size[1] / image.height)
-    crop_width, crop_height = size[0] / scale, size[1] / scale
-    left = round((image.width - crop_width) * p["anchor_x"] / 100)
-    top = round((image.height - crop_height) * p["anchor_y"] / 100)
-    region = image.crop((left, top, left + round(crop_width), top + round(crop_height)))
-    planes = [channel.resize(size, Image.Resampling.LANCZOS) for channel in region.split()]
-    return Image.merge("RGBA", planes)
+    if size == image.size:
+        return image.copy()
+    source = image.convert("RGBA")
+    scale = max(size[0] / source.width, size[1] / source.height)
+    crop_width = min(source.width, max(1, int(round(size[0] / scale))))
+    crop_height = min(source.height, max(1, int(round(size[1] / scale))))
+    left = int(round((source.width - crop_width) * p["anchor_x"] / 100))
+    top = int(round((source.height - crop_height) * p["anchor_y"] / 100))
+    left = min(max(left, 0), source.width - crop_width)
+    top = min(max(top, 0), source.height - crop_height)
+    region = source.crop((left, top, left + crop_width, top + crop_height))
+    return resize_premultiplied(region, size, Image.Resampling.LANCZOS)
 
 
 def resize_pad(image, p, context):

@@ -30,6 +30,96 @@ def test_resize_exact_dimensions(registry, sample_image, tmp_path):
     assert output.size == (111, 73)
 
 
+def _fill(registry, context, image, width, height, anchor_x=50, anchor_y=50):
+    return registry.apply(image, {"operation": "resize_fill", "params": {
+        "width": width, "height": height,
+        "anchor_x": anchor_x, "anchor_y": anchor_y,
+    }}, context)
+
+
+def test_resize_fill_never_pads_crop_out_of_bounds(registry, tmp_path):
+    context = OperationContext(Settings(root=tmp_path))
+    image = Image.new("RGBA", (7, 7), (255, 255, 255, 255))
+    for anchor_x, anchor_y in [(0, 0), (0, 100), (100, 0), (100, 100), (50, 50)]:
+        output = _fill(registry, context, image, 7, 14, anchor_x, anchor_y)
+        pixels = np.asarray(output)
+        assert output.size == (7, 14)
+        assert (pixels[..., 3] == 255).all()
+        assert not (pixels[..., :3] == 0).all(axis=-1).any()
+
+
+def test_resize_fill_anchor_moves_continuously(registry, tmp_path):
+    context = OperationContext(Settings(root=tmp_path))
+    image = Image.fromarray(np.random.default_rng(1).integers(0, 256, (53, 37, 4), np.uint8))
+    for target_width, target_height in [(3, 7), (31, 5), (100, 3), (3, 100), (1, 1)]:
+        scale = max(target_width / image.width, target_height / image.height)
+        crop_width = min(image.width, max(1, round(target_width / scale)))
+        crop_height = min(image.height, max(1, round(target_height / scale)))
+        lefts = [min(max(round((image.width - crop_width) * ax / 100), 0),
+                     image.width - crop_width) for ax in range(101)]
+        tops = [min(max(round((image.height - crop_height) * ay / 100), 0),
+                    image.height - crop_height) for ay in range(101)]
+        assert lefts == sorted(lefts) and tops == sorted(tops)
+        assert all(step <= 1 for step in np.diff(lefts)) and all(step <= 1 for step in np.diff(tops))
+        assert lefts[0] == 0 and lefts[-1] == image.width - crop_width
+        assert tops[0] == 0 and tops[-1] == image.height - crop_height
+        for anchor_x, anchor_y in [(0, 0), (100, 100), (37, 63)]:
+            assert _fill(registry, context, image, target_width, target_height,
+                         anchor_x, anchor_y).size == (target_width, target_height)
+
+
+def test_resize_fill_keeps_square_aspect(registry, tmp_path):
+    context = OperationContext(Settings(root=tmp_path))
+    image = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+    for y in range(30, 70):
+        for x in range(30, 70):
+            image.putpixel((x, y), (255, 255, 255, 255))
+    output = _fill(registry, context, image, 50, 100)
+    mask = np.asarray(output.getchannel("A")) > 0
+    ys, xs = np.where(mask)
+    assert abs((xs.max() - xs.min() + 1) - (ys.max() - ys.min() + 1)) <= 1
+
+
+def test_resize_fill_transparent_rgb_cannot_fringe_edges(registry, tmp_path):
+    context = OperationContext(Settings(root=tmp_path))
+    image = Image.new("RGBA", (7, 7), (0, 0, 0, 0))
+    for y in range(2, 5):
+        for x in range(2, 5):
+            image.putpixel((x, y), (255, 0, 0, 255))
+    image.putpixel((2, 2), (255, 0, 0, 128))
+    output = _fill(registry, context, image, 21, 21)
+    pixels = np.asarray(output).astype(int)
+    semi = pixels[(pixels[..., 3] > 0) & (pixels[..., 3] < 255)]
+    assert semi.size > 0
+    assert (semi[..., 0] - np.maximum(semi[..., 1], semi[..., 2]) >= 240).all()
+    transparent = pixels[pixels[..., 3] == 0]
+    assert (transparent[..., :3] == 0).all()
+    opaque = pixels[pixels[..., 3] == 255]
+    assert (opaque[..., 0] >= 250).all() and (opaque[..., 1] <= 5).all()
+
+
+def test_resize_fill_same_size_returns_identical_pixels(registry, tmp_path):
+    context = OperationContext(Settings(root=tmp_path))
+    image = Image.fromarray(np.random.default_rng(2).integers(0, 256, (19, 23, 4), np.uint8))
+    for anchor_x, anchor_y in [(50, 50), (0, 100), (100, 0)]:
+        output = _fill(registry, context, image, image.width, image.height, anchor_x, anchor_y)
+        assert np.array_equal(np.asarray(output), np.asarray(image))
+
+
+def test_resize_fill_odd_and_extreme_dimensions(registry, tmp_path):
+    context = OperationContext(Settings(root=tmp_path))
+    image = Image.new("RGBA", (37, 53), (10, 20, 30, 255))
+    for width, height in [(1, 1), (1, 500), (500, 1), (3, 3), (99, 101)]:
+        assert _fill(registry, context, image, width, height).size == (width, height)
+
+
+def test_resize_fill_still_enforces_size_limits(registry, sample_image, tmp_path):
+    context = OperationContext(Settings(root=tmp_path))
+    for width, height in [(8192, 8192), (4001, 4000), (0, 10), (10, 0)]:
+        with pytest.raises(StudioError):
+            _fill(registry, context, sample_image, width, height)
+
+
 def test_rotate_exact_pixels(registry, sample_image, tmp_path):
     output = registry.apply(sample_image, {"operation": "transform_quarter", "params": {"angle": "90"}}, OperationContext(Settings(tmp_path)))
     assert np.array_equal(np.asarray(output), np.rot90(np.asarray(sample_image)))
