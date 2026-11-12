@@ -1,13 +1,16 @@
 """Real format encoding and deterministic, path-safe ZIP delivery."""
+import hashlib
 import io
+import json
 import os
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from PIL import Image
 from .errors import StudioError
 from .imaging import flatten
 from .storage import new_id
-from .validation import object_value, reject_unknown, choice_value, number_value, color_value, boolean_value, list_value
+from .validation import object_value, reject_unknown, choice_value, number_value, color_value, boolean_value, list_value, identifier
 
 
 EXTENSIONS = {"PNG": "png", "JPEG": "jpg", "WEBP": "webp", "BMP": "bmp", "TIFF": "tiff", "GIF": "gif"}
@@ -90,34 +93,87 @@ class ExportService:
         name = asset["name"].rsplit(".", 1)[0][:100] + "." + extension
         return self._save_file(payload, extension, name, [asset_id], options, "image")
 
+    def _archive_failure(self, asset_id, error):
+        """Turn any per-member failure into a whole-batch error."""
+        if isinstance(error, StudioError):
+            return StudioError(
+                f"批量导出失败，未生成压缩包：{error.message}",
+                code=error.code,
+                status=error.status if 400 <= error.status < 600 else 400,
+                details={"asset_id": asset_id, "reason": error.as_dict()},
+            )
+        return StudioError(
+            "批量导出失败，未生成压缩包：图片编码异常",
+            code="encoding_error",
+            status=500,
+            details={"asset_id": asset_id},
+        )
+
     def archive(self, asset_ids, options):
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        import json
         asset_ids = list_value(asset_ids, "导出图片", maximum=self.settings.max_batch)
-        asset_ids = list(dict.fromkeys(asset_ids))
+        asset_ids = list(dict.fromkeys(identifier(value) for value in asset_ids))
         options = self.validate(options)
-        buffer = io.BytesIO()
         extension = EXTENSIONS[options["format"]]
-        def prepare(asset_id):
-            image, asset = self.assets.load(asset_id)
-            return self.encode(image, options)
         with self.processing.compute_lock:
-            with ThreadPoolExecutor(max_workers=4) as pool:
-                futures = [pool.submit(prepare, asset_id) for asset_id in asset_ids]
-                with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-                    for index, (asset_id, future) in enumerate(zip(asset_ids, as_completed(futures)), start=1):
-                        try:
-                            payload = future.result()
-                        except Exception:
-                            continue
-                        filename = f"{index:02d}_{asset_id[:8]}.{extension}"
-                        archive.writestr(filename, payload)
-                    manifest = {"options": options, "assets": asset_ids, "count": len(asset_ids)}
-                    archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+            # Every member must exist before any encoding starts. A missing record
+            # aborts the whole batch instead of producing an incomplete archive.
+            for asset_id in asset_ids:
+                try:
+                    self.assets.get(asset_id)
+                except StudioError as error:
+                    raise self._archive_failure(asset_id, error) from error
+
+            def prepare(asset_id):
+                image, asset = self.assets.load(asset_id)
+                return asset, self.encode(image, options)
+
+            pool = ThreadPoolExecutor(max_workers=4)
+            try:
+                futures = {asset_id: pool.submit(prepare, asset_id) for asset_id in asset_ids}
+                # Collect strictly in selection order, never in completion order,
+                # so index, filename, payload and manifest always describe the
+                # same asset no matter which encoding finishes first.
+                encoded = []
+                for asset_id in asset_ids:
+                    try:
+                        asset, payload = futures[asset_id].result()
+                    except Exception as error:
+                        raise self._archive_failure(asset_id, error) from error
+                    encoded.append((asset_id, asset, payload))
+            finally:
+                pool.shutdown(wait=True, cancel_futures=True)
+
+            buffer = io.BytesIO()
+            used_names = set()
+            entries = []
+            with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for index, (asset_id, asset, payload) in enumerate(encoded, start=1):
+                    stem = f"{index:02d}_{asset_id[:8]}"
+                    filename = f"{stem}.{extension}"
+                    duplicate = 1
+                    while filename in used_names:
+                        duplicate += 1
+                        filename = f"{stem}_{duplicate}.{extension}"
+                    used_names.add(filename)
+                    archive.writestr(filename, payload)
+                    entries.append({
+                        "index": index,
+                        "asset_id": asset_id,
+                        "source_name": asset["name"],
+                        "filename": filename,
+                        "bytes": len(payload),
+                        "sha256": hashlib.sha256(payload).hexdigest(),
+                    })
+                manifest = {
+                    "options": options,
+                    "assets": asset_ids,
+                    "count": len(asset_ids),
+                    "entries": entries,
+                }
+                archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
         return self._save_file(buffer.getvalue(), "zip", "光屿_批量导出.zip", asset_ids, options, "archive")
 
     def file(self, export_id):
-        from .validation import identifier
         identifier(export_id)
         record = self.store.get("exports", export_id)
         path = self.settings.exports / record["filename"]

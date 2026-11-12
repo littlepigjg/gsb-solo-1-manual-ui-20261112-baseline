@@ -88,7 +88,9 @@
 }
 ```
 
-支持 `PNG/JPEG/WEBP/BMP/TIFF/GIF`。响应的 `url` 可直接下载。ZIP 接口将 `asset_id` 改为 `asset_ids` 数组，压缩包中包含安全命名的图片和 `manifest.json`。
+支持 `PNG/JPEG/WEBP/BMP/TIFF/GIF`。响应的 `url` 可直接下载。ZIP 接口将 `asset_id` 改为 `asset_ids` 数组，先按首次出现顺序去重，再按该顺序编码和命名，压缩包中包含安全命名的图片和 `manifest.json`。
+
+ZIP 是整批一致的：只要任一张图片的记录不存在、文件丢失或编码失败，整个请求返回错误，不创建 `exports` 记录、不留下 ZIP 或临时文件。包内 `NN_xxxxxxxx.ext` 的编号、文件内容与 `manifest.json` 的 `entries` 按选择顺序一一对应，`entries` 同时记录 `asset_id`、原始 `source_name`、`filename`、字节数和 SHA-256。单张时也可使用 `/exports` 得到不带 ZIP 的编码文件。
 
 ## 状态码
 
