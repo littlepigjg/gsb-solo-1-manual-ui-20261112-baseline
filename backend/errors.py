@@ -29,3 +29,11 @@ class Conflict(StudioError):
     def __init__(self, message):
         super().__init__(message, code="conflict", status=409)
 
+
+class SourceDeleted(Conflict):
+    """The source asset disappeared while a result was being produced."""
+
+    def __init__(self, message="源图已被删除，本次处理结果未保存"):
+        super().__init__(message)
+        self.code = "source_deleted"
+

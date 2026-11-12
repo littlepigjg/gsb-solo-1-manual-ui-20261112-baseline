@@ -5,7 +5,7 @@ import os
 import threading
 from pathlib import Path
 from PIL import Image
-from .errors import StudioError, Conflict
+from .errors import StudioError, Conflict, SourceDeleted
 from .storage import new_id
 from .imaging import decode_image
 from .validation import identifier, text_value
@@ -98,7 +98,12 @@ class AssetService:
                     "tags": [],
                     "metadata": metadata or {},
                 }
-                record = self.store.insert("assets", record)
+
+                def parent_present(records):
+                    if parent and parent["id"] not in records:
+                        raise SourceDeleted()
+
+                record = self.store.insert_guarded("assets", record, parent_present)
                 return self.public(record)
             except Exception:
                 path.unlink(missing_ok=True)
@@ -145,6 +150,9 @@ class AssetService:
             for job in self.store.all("jobs"):
                 if job["status"] in {"queued", "running", "cancelling"} and asset_id in job["asset_ids"]:
                     raise Conflict("图片正在批量任务中使用，任务结束后才能删除")
+            # Same lock as save(): either a descendant is already recorded here
+            # (refuse; its history stays complete) or a save that already passed
+            # its parent check will publish before this re-check runs.
             descendants = [item for item in self.store.all("assets") if item.get("parent_id") == asset_id]
             if descendants:
                 raise Conflict("该图片有处理副本，请先删除其副本，以保留完整历史")

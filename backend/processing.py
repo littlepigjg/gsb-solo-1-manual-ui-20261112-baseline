@@ -2,7 +2,7 @@
 import threading
 import time
 from .registry import OperationContext
-from .errors import StudioError
+from .errors import MissingRecord, SourceDeleted, StudioError
 from .validation import text_value
 
 
@@ -43,6 +43,14 @@ class ProcessingService:
             image, timings = self.apply_steps(image, steps, progress, cancelled)
             if cancelled and cancelled():
                 raise StudioError("任务已取消", code="cancelled", status=409)
+            # Pin the lineage before publishing. The save re-checks this parent
+            # under the store lock: a concurrent delete either already saw the new
+            # descendant and is refused, or removed the source first and this save
+            # fails with ``source_deleted`` instead of leaving an orphan copy.
+            try:
+                parent = self.assets.get(asset_id)
+            except MissingRecord:
+                raise SourceDeleted() from None
             last = self.registry.spec(steps[-1]["operation"])
             if name is None:
                 base = parent["name"].rsplit(".", 1)[0][:100]

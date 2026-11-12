@@ -110,6 +110,27 @@ class JsonStore:
             self._write(collection, data)
             return copy.deepcopy(record)
 
+    def insert_guarded(self, collection, record, guard):
+        """Insert only while ``guard`` still passes against the same snapshot.
+
+        The check and the replacement happen under one lock, so a concurrent
+        delete cannot slip between "the parent still exists" and "the child is
+        written". ``guard`` receives the current records mapping and must only
+        inspect it; raising aborts the insert without writing anything.
+        """
+        with self.lock:
+            data = self._read(collection)
+            guard(data["records"])
+            record = copy.deepcopy(record)
+            record.setdefault("id", new_id())
+            record.setdefault("created_at", utc_now())
+            record["updated_at"] = utc_now()
+            if record["id"] in data["records"]:
+                raise Conflict("记录已存在")
+            data["records"][record["id"]] = record
+            self._write(collection, data)
+            return copy.deepcopy(record)
+
     def update(self, collection, record_id, changes):
         with self.lock:
             data = self._read(collection)
