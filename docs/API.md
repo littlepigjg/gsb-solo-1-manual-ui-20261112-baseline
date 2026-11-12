@@ -34,7 +34,9 @@
 | POST | `/jobs/{id}/cancel` | 申请取消，body 为 `{}` |
 | POST | `/exports` | 单图实际格式编码 |
 | POST | `/exports/archive` | 多图编码并生成 ZIP |
-| GET | `/exports/{id}/download` | 下载导出产物 |
+| POST | `/animations/preview` | 按帧序列生成临时 GIF 预览（不写入数据），时长与告警经响应头返回 |
+| POST | `/animations` | 生成循环 GIF 并登记到 exports，返回下载地址 |
+| GET | `/exports/{id}/download` | 下载导出产物（含静态图、ZIP 与循环 GIF） |
 | GET | `/events` | 最近 100 条操作记录 |
 | GET | `/backup` | 下载完整 JSON 元数据快照 |
 
@@ -89,6 +91,34 @@
 ```
 
 支持 `PNG/JPEG/WEBP/BMP/TIFF/GIF`。响应的 `url` 可直接下载。ZIP 接口将 `asset_id` 改为 `asset_ids` 数组，压缩包中包含安全命名的图片和 `manifest.json`。
+
+## 循环动图请求
+
+```json
+{
+  "frames": [
+    {"asset_id": "第一帧图片id", "duration_ms": 700},
+    {"asset_id": "第二帧图片id", "duration_ms": 130}
+  ],
+  "canvas_mode": "max",
+  "width": 480,
+  "height": 480,
+  "fit": "contain",
+  "background": "#ffffff",
+  "loop": true,
+  "alpha_mode": "keep",
+  "colors": 256,
+  "dither": "floyd"
+}
+```
+
+- `frames` 为 2–24 帧，顺序即下载后 GIF 的播放顺序；`duration_ms` 取 20–10000 的整数，编码时四舍五入到 GIF 的 10 ms 网格。
+- `canvas_mode`：`max` 取所有帧的最大宽高、`first` 与第一帧一致、`custom` 使用 `width/height`（16–1920）。
+- `fit`：`contain` 等比适应留白、`cover` 等比铺满裁切、`stretch` 拉伸、`center` 原尺寸居中。
+- `alpha_mode`：`keep` 保留 1 位透明（半透明边缘先与 `background` 融合再按阈值二值化，disposal=2），`flatten` 全部合成到背景色。
+- `colors`（2–256）与 `dither`（`floyd` 抖动 / `none` 关闭）。所有帧共用同一调色板，保证循环配色协调并尽量保留细微色差。
+- 尺寸不一致、重复帧、透明二值化与时长对齐都会在响应记录的 `animation.warnings`（预览接口为 `X-Animation-Warnings` 响应头）中明确说明；重复帧不会被自动删除。
+- 预览接口额外返回 `X-Frame-Count`、`X-Total-Duration-Ms`、`X-Canvas-Size`、`X-Animation-Transparency` 响应头，且不产生 exports 记录。
 
 ## 状态码
 

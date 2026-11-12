@@ -7,3 +7,45 @@
 @media(max-width:790px){.sidebar{width:70px;padding:22px 9px}.brand{padding:0;justify-content:center;margin-bottom:27px}.brand>span,.sidebar-section-title,.nav-item>.count,.nav-dot,.tool-item>span:last-child,.local-card,.system-button{display:none}.nav-item,.tool-item{font-size:0;gap:0;justify-content:center;padding:13px 8px}.nav-item .icon,.tool-item .icon{width:20px;height:20px}.tool-nav{margin-top:20px}.tool-item.active:before{left:-9px}.main{margin-left:70px}.topbar{height:64px}.connection{display:none}.editor-grid{grid-template-columns:minmax(0,1fr) 250px}.page-heading{gap:10px}.page-heading>.button{font-size:0;padding:10px}.page-heading>.button .icon{width:18px;height:18px}.page-heading h1{font-size:21px}.page-heading p{font-size:10px}.page-heading .eyebrow{font-size:7px;letter-spacing:1px}.canvas-area{height:350px;padding:17px}.file-heading strong{max-width:100px}.toolbar-buttons #fullscreen-button{display:none}.workspace-footnote>span:first-child{display:none}.canvas-toolbar{height:52px;padding:0 10px}.filmstrip{padding:0 12px 14px}.filmstrip-heading{padding:15px 12px 10px}.film-item{width:75px;height:57px}}
 @media(max-width:620px){.main{margin-left:57px}.sidebar{width:57px;padding:20px 6px}.brand-mark{width:29px}.brand{margin-bottom:20px}.nav-item,.tool-item{padding:11px 6px}.tool-nav{margin-top:13px}.tool-item .icon{width:18px;height:18px}.view{padding:22px 13px}.topbar{padding:0 13px;height:59px}.breadcrumb{font-size:10px;gap:8px}.topbar-actions .button{font-size:9px;padding:8px 10px}.editor-grid{grid-template-columns:1fr}.page-heading{margin-bottom:22px}.page-heading h1{font-size:20px;letter-spacing:0;margin:10px 0}.page-heading p{font-size:9px;letter-spacing:0}.page-heading .eyebrow{font-size:6px;letter-spacing:.8px}.canvas-area{height:340px;padding:24px}.canvas-toolbar{padding:0 14px}.file-heading strong{max-width:160px}.toolbar-buttons .button .icon{display:block}.toolbar-buttons #fullscreen-button{display:flex}.canvas-footer>div:last-child{display:flex;font-size:8px}.inspector-tabs{justify-content:space-around;gap:20px}.inspector-panel{padding:23px}.inspector-export{padding:20px 23px}.workspace-footnote{font-size:8px;justify-content:center;line-height:1.8}.asset-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.asset-card .asset-open{height:135px}.asset-card-info{padding:11px 9px}.asset-card-info h3{font-size:10px}.asset-card-info p{font-size:8px}.asset-card-actions{padding:0 9px 10px}.library-toolbar{padding:12px;gap:9px}.library-toolbar .search-field{flex-basis:100%}.library-toolbar>select{flex:1}.library-toolbar .button{font-size:9px;padding:7px 9px}.batch-compose,.job-history{padding:20px}.batch-layout{gap:16px}.batch-selection-head h2{font-size:13px}.toast-container{left:70px;right:13px;bottom:16px}.toast{font-size:11px;padding:12px 14px}.empty-state{padding:12px}.empty-state h2{font-size:14px}.empty-state small{font-size:8px}.filmstrip-heading{font-size:9px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* 循环动图工作室 */
+#animation-dialog{width:min(980px,calc(100vw - 40px));padding:26px}
+.anim-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:24px;align-items:start}
+.anim-frames{min-width:0}
+.anim-section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px;font-size:12px;color:#3f5c42}
+.anim-section-head strong{font-weight:600}
+.anim-section-head strong span{font-size:9px;color:#8ea276;background:#edf2e5;border-radius:4px;padding:2px 7px;margin-left:7px}
+.anim-frame-list{display:grid;gap:10px;max-height:520px;overflow-y:auto;padding-right:6px;scrollbar-width:thin}
+.anim-frame{display:grid;grid-template-columns:34px 74px minmax(0,1fr) auto;gap:11px;align-items:center;background:#f7faf2;border:1px solid #e2e9d9;border-radius:10px;padding:9px 11px}
+.anim-frame-index{width:26px;height:26px;border-radius:50%;background:#e2ecd6;color:#5f7c49;display:grid;place-items:center;font-size:10px;font-weight:650}
+.anim-frame img{width:74px;height:56px;object-fit:contain;background:#fff;border:1px solid #e4eadb;border-radius:6px}
+.anim-frame-meta{min-width:0}
+.anim-frame-meta strong{display:block;font-size:11px;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:7px}
+.anim-duration-row{display:flex;align-items:center;gap:9px}
+.anim-duration-row input[type=range]{flex:1;min-width:0}
+.anim-duration-row input[type=number]{width:74px;padding:5px 7px;font-size:10px;text-align:right}
+.anim-duration-row small{font-size:9px;color:#9aaa8b;white-space:nowrap}
+.anim-frame-controls{display:flex;flex-direction:column;gap:4px;align-items:center}
+.anim-frame-controls button{font-size:14px;line-height:1;color:#7f9370;padding:3px 7px;border-radius:5px}
+.anim-frame-controls button:hover{background:#e7eedb}
+.anim-frame-controls button:disabled{opacity:.3}
+.anim-settings{background:#fcfdf9;border:1px solid var(--line);border-radius:12px;padding:20px;display:grid;gap:13px}
+.anim-settings .anim-section-head{margin:4px 0 0}
+.anim-settings .field-label{margin-bottom:6px}
+.anim-settings select,.anim-settings input:not([type=range],[type=checkbox],[type=color]){min-height:34px;padding:7px 9px}
+.anim-loop-label{margin:2px 0 0}
+.anim-preview-box{background:#fff;border:1px solid #e4eadb;border-radius:10px;padding:14px;display:grid;gap:10px}
+.anim-preview-box img{width:100%;max-height:240px;object-fit:contain;background:#f0f2eb;background-image:radial-gradient(#cfd7c3 .6px,transparent .6px);background-size:9px 9px;border-radius:8px}
+.anim-warnings{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+.anim-warnings li{font-size:9.5px;line-height:1.7;color:#8a6d3b;background:#fbf4e4;border:1px solid #ecdcba;border-radius:7px;padding:8px 10px}
+.anim-warnings li.info{color:#5d7a52;background:#f2f7ea;border-color:#d7e4c8}
+.anim-actions{display:grid;gap:10px;margin-top:2px}
+.anim-actions .button{margin-top:0}
+#animation-dialog .two-fields{gap:14px}
+@media(max-width:900px){.anim-layout{grid-template-columns:1fr}.anim-frame-list{max-height:340px}}
+
+/* 动图素材选择器 */
+dialog.anim-picker{width:min(880px,calc(100vw - 40px));max-height:88vh;padding:26px}
+.anim-picker .asset-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+.anim-picker .asset-open{height:120px}
+.anim-picker .dialog-actions{position:sticky;bottom:-26px;background:#fff;padding-top:12px;margin-bottom:-10px}

@@ -13,6 +13,7 @@ Flask 路由与错误边界
         ├── Processing ──── 有序执行 / 资源限制 / 新副本和溯源
         ├── JobService ──── 单工作线程 / 进度 / 取消 / 重启恢复
         ├── ExportService ─ 实际格式编码 / ZIP 打包
+        ├── AnimationService 循环 GIF：统一画布 / 共享调色板 / 帧时长对齐
         ├── Analysis ────── 采样直方图 / 色谱 / 误差分析
         ├── Presets ─────── 内置与自定义 JSON 流程
         └── Diagnostics ── 依赖与文件完整性检查

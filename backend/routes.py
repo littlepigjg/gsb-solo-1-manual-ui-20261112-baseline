@@ -208,6 +208,27 @@ def export_archive():
     return ok(service("exports").archive(data.get("asset_ids"), data.get("options", {})), 201)
 
 
+@api.post("/animations/preview")
+def animation_preview():
+    from .animation import preview_headers
+    from flask import Response
+    data = payload({"frames", "canvas_mode", "width", "height", "fit", "background",
+                    "loop", "alpha_mode", "colors", "dither"})
+    buffer, meta = service("animations").build(data, preview=True)
+    return Response(
+        buffer.getvalue(),
+        mimetype="image/gif",
+        headers={"Cache-Control": "no-store", **preview_headers(meta)},
+    )
+
+
+@api.post("/animations")
+def animation_create():
+    data = payload({"frames", "canvas_mode", "width", "height", "fit", "background",
+                    "loop", "alpha_mode", "colors", "dither"})
+    return ok(service("animations").create(data), 201)
+
+
 @api.get("/exports/<export_id>/download")
 def export_download(export_id):
     path, record, mime = service("exports").file(export_id)

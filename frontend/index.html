@@ -82,7 +82,7 @@
 
       <section id="library-view" class="view">
         <div class="page-heading"><div><div class="eyebrow">YOUR VISUAL COLLECTION</div><h1>把灵感，收在这里<span>。</span></h1><p>原始素材与处理副本，始终清晰可寻。</p></div><button id="library-upload" class="button dark"><span data-icon="plus"></span>导入素材</button></div>
-        <div class="library-toolbar"><div class="search-field"><span data-icon="search"></span><input id="asset-search" placeholder="搜索图片名称…" aria-label="搜索图片名称"></div><select id="asset-kind" aria-label="图片类型"><option value="all">全部图片</option><option value="original">导入原图</option><option value="result">处理副本</option><option value="sample">示例素材</option></select><button id="select-all" class="button subtle small">选择当前页</button><span id="selection-count">已选 0 张</span><button id="library-batch" class="button outline small">批量处理</button><button id="library-export" class="button dark small">打包导出</button></div>
+        <div class="library-toolbar"><div class="search-field"><span data-icon="search"></span><input id="asset-search" placeholder="搜索图片名称…" aria-label="搜索图片名称"></div><select id="asset-kind" aria-label="图片类型"><option value="all">全部图片</option><option value="original">导入原图</option><option value="result">处理副本</option><option value="sample">示例素材</option></select><button id="select-all" class="button subtle small">选择当前页</button><span id="selection-count">已选 0 张</span><button id="library-batch" class="button outline small">批量处理</button><button id="library-gif" class="button outline small"><span data-icon="play"></span>制作循环动图</button><button id="library-export" class="button dark small">打包导出</button></div>
         <div id="asset-grid" class="asset-grid"></div><button id="load-more" class="button outline load-more" hidden>加载更多</button>
       </section>
 
@@ -101,5 +101,63 @@
   <dialog id="preset-dialog"><form id="preset-form"><div class="dialog-heading"><h2>保存这份创作流程</h2><button type="button" class="icon-button close-dialog" aria-label="关闭">×</button></div><label>预设名称<input id="preset-name" required maxlength="80" placeholder="例如：午后胶片"></label><label>简短说明<textarea id="preset-description" maxlength="300" rows="3" placeholder="记录这份流程适合的场景"></textarea></label><button class="button dark wide" type="submit">保存预设</button></form></dialog>
   <dialog id="system-dialog"><div class="dialog-heading"><h2>系统与数据</h2><button class="icon-button close-dialog" aria-label="关闭">×</button></div><div id="system-content"></div><a class="button outline wide" href="/api/backup" download>下载 JSON 元数据备份</a><p class="muted">元数据备份不包含图片文件。完整备份请复制项目的 data 文件夹。</p></dialog>
   <dialog id="confirm-dialog"><div class="dialog-heading"><h2 id="confirm-title">删除素材</h2><button class="icon-button close-dialog" aria-label="关闭">×</button></div><p id="confirm-message"></p><div class="dialog-actions"><button class="button subtle close-dialog">取消</button><button id="confirm-action" class="button danger">确认删除</button></div></dialog>
+
+  <dialog id="animation-dialog">
+    <div class="dialog-heading">
+      <div><div class="eyebrow">FRAMES IN MOTION</div><h2>循环动图工作室</h2><p class="muted" id="animation-summary">安排帧顺序与停留时间，在页面内预览并下载 GIF。</p></div>
+      <button type="button" class="icon-button close-dialog" aria-label="关闭">×</button>
+    </div>
+    <div class="anim-layout">
+      <section class="anim-frames">
+        <div class="anim-section-head"><strong>帧顺序 <span id="anim-frame-count">0</span></strong><button type="button" id="anim-add" class="text-button"><span data-icon="plus"></span>从素材库添加</button></div>
+        <p class="muted" id="anim-empty">还没有帧。点击右上角“从素材库添加”，选择 2–24 张图片。</p>
+        <div id="anim-frame-list" class="anim-frame-list"></div>
+      </section>
+      <section class="anim-settings">
+        <div class="anim-section-head"><strong>画布与背景</strong></div>
+        <label class="field-label" for="anim-canvas-mode">最终画布</label>
+        <select id="anim-canvas-mode">
+          <option value="max">包含所有帧的最大画布</option>
+          <option value="first">与第一帧相同</option>
+          <option value="custom">自定义尺寸</option>
+        </select>
+        <div id="anim-custom-size" class="two-fields" hidden>
+          <label class="field-label" for="anim-width">宽度 px<input id="anim-width" type="number" min="16" max="1920" step="2" value="480"></label>
+          <label class="field-label" for="anim-height">高度 px<input id="anim-height" type="number" min="16" max="1920" step="2" value="480"></label>
+        </div>
+        <label class="field-label" for="anim-fit">尺寸不一致时</label>
+        <select id="anim-fit">
+          <option value="contain">等比适应，留白填背景色</option>
+          <option value="cover">等比铺满，超出部分裁切</option>
+          <option value="stretch">拉伸铺满画布</option>
+          <option value="center">保持原始尺寸，居中放置</option>
+        </select>
+        <div class="two-fields">
+          <label class="field-label" for="anim-background">背景色 / 留白填充<input id="anim-background" type="color" value="#ffffff"></label>
+          <label class="field-label" for="anim-alpha">透明素材<input id="anim-alpha" type="checkbox" checked></label>
+        </div>
+        <small class="field-help" id="anim-alpha-help">勾选后保留透明（GIF 仅 1 位透明，半透明边缘与背景色融合后按阈值处理）；取消则全部合成到背景色。</small>
+        <div class="anim-section-head"><strong>配色与节奏</strong></div>
+        <div class="two-fields">
+          <label class="field-label" for="anim-colors">调色板颜色数<input id="anim-colors" type="number" min="2" max="256" step="1" value="256"></label>
+          <label class="field-label" for="anim-dither">细微色差保护<select id="anim-dither"><option value="floyd">启用 Floyd–Steinberg 抖动</option><option value="none">关闭抖动（色块更干净）</option></select></label>
+        </div>
+        <small class="field-help">所有帧共用同一调色板，保证循环配色协调；抖动可减少渐变与细微颜色的带状断层。</small>
+        <label class="field-label" for="anim-default-duration">新帧默认停留 <output id="anim-default-value">800</output> ms</label>
+        <input id="anim-default-duration" type="range" min="100" max="3000" step="20" value="800">
+        <label class="checkbox-label anim-loop-label"><input id="anim-loop" type="checkbox" checked>循环播放（GIF 无缝循环）</label>
+        <div class="anim-preview-box">
+          <div class="anim-section-head"><strong>预览</strong><span id="anim-timing" class="muted"></span></div>
+          <div id="anim-preview-empty" class="muted">添加至少 2 帧后生成预览。</div>
+          <img id="anim-preview" alt="循环动图预览" hidden>
+          <ul id="anim-warnings" class="anim-warnings"></ul>
+        </div>
+        <div class="anim-actions">
+          <button type="button" id="anim-preview-button" class="button outline wide"><span data-icon="reset"></span>生成 / 刷新预览</button>
+          <button type="button" id="anim-download-button" class="button dark wide" disabled><span data-icon="download"></span>下载 GIF</button>
+        </div>
+      </section>
+    </div>
+  </dialog>
 </body>
 </html>

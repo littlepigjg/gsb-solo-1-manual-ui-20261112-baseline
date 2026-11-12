@@ -8,6 +8,10 @@ const state = {
   assets: [], assetMap: new Map(), assetTotal: 0, selected: new Set(),
   pipeline: [], presets: [], jobs: [], busy: false, comparing: false,
   selectionToken: 0, libraryToken: 0, exportIds: [], jobPoll: null,
+  anim: {
+    frames: [], defaultDuration: 800, previewUrl: null, dirty: true,
+    previewMeta: null, picker: null, pickerToken: 0,
+  },
 };
 
 const paths = {
@@ -543,6 +547,319 @@ async function showSystem() {
   $("#system-content").innerHTML = `<dl class="system-data">${rows.map(([label, value]) => `<dt>${label}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl>${diagnostics.issues.length ? `<p class="system-alert">${diagnostics.issues.length} 项数据检查提示，请查看 /api/diagnostics。</p>` : '<p class="muted">JSON 数据与图片文件检查正常。</p>'}`;
 }
 
+/* ---------------- 循环动图工作室 ---------------- */
+
+const ANIM_MIN_MS = 20;
+const ANIM_MAX_MS = 10000;
+
+function animPayload() {
+  const missing = state.anim.frames.find(frame => !state.assetMap.has(frame.asset_id));
+  if (missing) throw new Error("有帧引用的素材已被删除，请移除该帧后再试。");
+  return {
+    frames: state.anim.frames.map(frame => ({ asset_id: frame.asset_id, duration_ms: frame.duration_ms })),
+    canvas_mode: $("#anim-canvas-mode").value,
+    width: Number($("#anim-width").value),
+    height: Number($("#anim-height").value),
+    fit: $("#anim-fit").value,
+    background: $("#anim-background").value,
+    loop: $("#anim-loop").checked,
+    alpha_mode: $("#anim-alpha").checked ? "keep" : "flatten",
+    colors: Number($("#anim-colors").value),
+    dither: $("#anim-dither").value,
+  };
+}
+
+function animTimingText(meta) {
+  if (!meta) return "";
+  const seconds = (meta.total_duration_ms / 1000).toFixed(2);
+  return `${meta.frame_count} 帧 · 一圈 ${seconds} 秒 · ${meta.width}×${meta.height} px`;
+}
+
+function renderAnimFrames() {
+  const { frames } = state.anim;
+  $("#anim-frame-count").textContent = frames.length;
+  $("#anim-empty").hidden = frames.length > 0;
+  $("#anim-frame-list").innerHTML = frames.map((frame, index) => {
+    const asset = state.assetMap.get(frame.asset_id);
+    const name = asset ? asset.name : "（素材已删除）";
+    return `
+      <div class="anim-frame" data-index="${index}">
+        <span class="anim-frame-index">${index + 1}</span>
+        <img src="${asset ? asset.thumbnail_url : ""}" alt="${escapeHtml(name)}">
+        <div class="anim-frame-meta">
+          <strong title="${escapeHtml(name)}">${escapeHtml(name)}</strong>
+          <div class="anim-duration-row">
+            <input type="range" min="100" max="3000" step="20" value="${frame.duration_ms}" data-duration-range="${index}" aria-label="第 ${index + 1} 帧停留时间">
+            <input type="number" min="${ANIM_MIN_MS}" max="${ANIM_MAX_MS}" step="10" value="${frame.duration_ms}" data-duration-number="${index}" aria-label="第 ${index + 1} 帧停留毫秒数">
+            <small>ms</small>
+          </div>
+        </div>
+        <div class="anim-frame-controls">
+          <button type="button" data-move-up="${index}" ${index === 0 ? "disabled" : ""} title="前移一帧" aria-label="前移一帧">↑</button>
+          <button type="button" data-move-down="${index}" ${index === frames.length - 1 ? "disabled" : ""} title="后移一帧" aria-label="后移一帧">↓</button>
+          <button type="button" data-remove-frame="${index}" title="移除该帧" aria-label="移除该帧">×</button>
+        </div>
+      </div>`;
+  }).join("");
+  $$("[data-duration-range]").forEach(input => input.addEventListener("input", () => {
+    const index = Number(input.dataset.durationRange);
+    state.anim.frames[index].duration_ms = Number(input.value);
+    $(`[data-duration-number="${index}"]`).value = input.value;
+    markAnimDirty();
+  }));
+  $$("[data-duration-number]").forEach(input => input.addEventListener("change", () => {
+    const index = Number(input.dataset.durationNumber);
+    let value = Number(input.value);
+    if (!Number.isFinite(value)) value = state.anim.defaultDuration;
+    value = Math.min(ANIM_MAX_MS, Math.max(ANIM_MIN_MS, Math.round(value / 10) * 10));
+    input.value = value;
+    state.anim.frames[index].duration_ms = value;
+    const range = $(`[data-duration-range="${index}"]`);
+    if (range) range.value = Math.min(3000, Math.max(100, value));
+    markAnimDirty();
+  }));
+  $$("[data-move-up]").forEach(button => button.addEventListener("click", () => {
+    const index = Number(button.dataset.moveUp);
+    if (index === 0) return;
+    [state.anim.frames[index - 1], state.anim.frames[index]] = [state.anim.frames[index], state.anim.frames[index - 1]];
+    markAnimDirty();
+    renderAnimFrames();
+  }));
+  $$("[data-move-down]").forEach(button => button.addEventListener("click", () => {
+    const index = Number(button.dataset.moveDown);
+    if (index === state.anim.frames.length - 1) return;
+    [state.anim.frames[index + 1], state.anim.frames[index]] = [state.anim.frames[index], state.anim.frames[index + 1]];
+    markAnimDirty();
+    renderAnimFrames();
+  }));
+  $$("[data-remove-frame]").forEach(button => button.addEventListener("click", () => {
+    state.anim.frames.splice(Number(button.dataset.removeFrame), 1);
+    markAnimDirty();
+    renderAnimFrames();
+    if (state.anim.frames.length < 2) {
+      $("#anim-preview").hidden = true;
+      $("#anim-preview-empty").hidden = false;
+      $("#anim-warnings").innerHTML = "";
+    }
+  }));
+  updateAnimActions();
+}
+
+function markAnimDirty() {
+  state.anim.dirty = true;
+  state.anim.previewMeta = null;
+  $("#anim-timing").textContent = "设置已修改，请刷新预览";
+  $("#anim-download-button").disabled = true;
+}
+
+function updateAnimActions() {
+  const ready = state.anim.frames.length >= 2;
+  $("#anim-preview-button").disabled = !ready || state.busy;
+  if (!ready) {
+    $("#anim-download-button").disabled = true;
+    $("#anim-preview-empty").hidden = false;
+    $("#anim-preview").hidden = true;
+    $("#anim-timing").textContent = "";
+  } else if (state.anim.previewMeta) {
+    $("#anim-download-button").disabled = false;
+  }
+}
+
+function renderAnimWarnings(warnings) {
+  const list = $("#anim-warnings");
+  if (!warnings?.length) { list.innerHTML = ""; return; }
+  list.innerHTML = warnings.map(message => `<li>${escapeHtml(message)}</li>`).join("");
+}
+
+function openAnimation(assetIds) {
+  const unique = [...new Set(assetIds.filter(id => state.assetMap.has(id)))];
+  if (unique.length < 2 && state.anim.frames.length === 0) {
+    toast("请至少选择 2 张图片来制作循环动图。", "error");
+    return;
+  }
+  const existing = new Set(state.anim.frames.map(frame => frame.asset_id));
+  unique.forEach(id => {
+    if (existing.has(id)) return;
+    if (state.anim.frames.length >= 24) return;
+    state.anim.frames.push({ asset_id: id, duration_ms: state.anim.defaultDuration });
+  });
+  $("#animation-dialog").showModal();
+  markAnimDirty();
+  renderAnimFrames();
+}
+
+async function refreshAnimPreview() {
+  if (state.anim.frames.length < 2) throw new Error("至少需要 2 帧才能生成动图。");
+  const button = $("#anim-preview-button");
+  button.disabled = true;
+  button.textContent = "正在生成预览…";
+  try {
+    const response = await fetch("/api/animations/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(animPayload()),
+    });
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(result?.error?.message || `预览失败（${response.status}）`);
+    }
+    const blob = await response.blob();
+    if (state.anim.previewUrl) URL.revokeObjectURL(state.anim.previewUrl);
+    state.anim.previewUrl = URL.createObjectURL(blob);
+    const meta = {
+      frame_count: Number(response.headers.get("X-Frame-Count")),
+      total_duration_ms: Number(response.headers.get("X-Total-Duration-Ms")),
+      width: Number(response.headers.get("X-Canvas-Size").split("x")[0]),
+      height: Number(response.headers.get("X-Canvas-Size").split("x")[1]),
+      transparency: response.headers.get("X-Animation-Transparency") === "1",
+      warnings: JSON.parse(decodeURIComponent(response.headers.get("X-Animation-Warnings") || "[]")),
+    };
+    state.anim.previewMeta = meta;
+    state.anim.dirty = false;
+    const image = $("#anim-preview");
+    image.src = state.anim.previewUrl;
+    image.hidden = false;
+    $("#anim-preview-empty").hidden = true;
+    $("#anim-timing").textContent = animTimingText(meta);
+    renderAnimWarnings(meta.warnings);
+    $("#anim-download-button").disabled = false;
+  } catch (error) {
+    $("#anim-download-button").disabled = true;
+    throw error;
+  } finally {
+    button.disabled = false;
+    button.innerHTML = `${icon("reset")}生成 / 刷新预览`;
+  }
+}
+
+async function downloadAnimation() {
+  if (state.anim.dirty || !state.anim.previewMeta) {
+    await refreshAnimPreview();
+  }
+  const button = $("#anim-download-button");
+  button.disabled = true;
+  button.textContent = "正在编码 GIF…";
+  try {
+    const record = await api("/animations", { method: "POST", body: animPayload() });
+    const link = document.createElement("a");
+    link.href = record.url;
+    link.download = record.download_name;
+    link.click();
+    const meta = record.animation;
+    $("#anim-timing").textContent = animTimingText(meta);
+    renderAnimWarnings(meta.warnings);
+    toast(`GIF 已生成并开始下载 · ${meta.frame_count} 帧 · ${(meta.total_duration_ms / 1000).toFixed(2)} 秒/圈`);
+  } finally {
+    button.disabled = false;
+    button.innerHTML = `${icon("download")}下载 GIF`;
+  }
+}
+
+/* 素材库选择器（动图加帧用的轻量弹层） */
+function openAnimPicker() {
+  if (state.anim.frames.length >= 24) {
+    toast("一个动图最多 24 帧。", "error");
+    return;
+  }
+  const token = ++state.anim.pickerToken;
+  state.anim.picker = new Set(state.anim.frames.map(frame => frame.asset_id));
+  const overlay = document.createElement("dialog");
+  overlay.className = "anim-picker";
+  overlay.setAttribute("aria-label", "选择动图帧");
+  overlay.innerHTML = `
+      <div class="dialog-heading"><div><div class="eyebrow">PICK FRAMES</div><h2>选择要加入的图片</h2></div><button type="button" class="icon-button" data-picker-close aria-label="关闭">×</button></div>
+      <div class="library-toolbar"><div class="search-field"><span data-icon="search"></span><input data-picker-search placeholder="搜索图片名称…" aria-label="搜索图片名称"></div>
+        <select data-picker-kind aria-label="图片类型"><option value="all">全部图片</option><option value="original">导入原图</option><option value="result">处理副本</option><option value="sample">示例素材</option></select>
+        <span data-picker-count>已选 0 张</span></div>
+      <div class="asset-grid" data-picker-grid><p class="muted">正在载入素材…</p></div>
+      <div class="dialog-actions"><button type="button" class="button subtle" data-picker-close>取消</button>
+        <button type="button" class="button dark" data-picker-confirm disabled>添加选中帧</button></div>`;
+  document.body.append(overlay);
+  hydrateIcons(overlay);
+  overlay.showModal();
+
+  const close = () => { if (state.anim.pickerToken === token) { overlay.close(); overlay.remove(); } };
+  overlay.addEventListener("click", event => { if (event.target === overlay) close(); });
+  overlay.addEventListener("cancel", event => { event.preventDefault(); close(); });
+  $$("[data-picker-close]", overlay).forEach(button => button.addEventListener("click", close));
+
+  const renderGrid = items => {
+    const grid = $("[data-picker-grid]", overlay);
+    grid.innerHTML = items.length ? items.map(asset => `
+      <article class="asset-card ${state.anim.picker.has(asset.id) ? "selected" : ""}">
+        <label class="asset-checkbox"><input type="checkbox" data-pick="${asset.id}" ${state.anim.picker.has(asset.id) ? "checked" : ""} aria-label="选择 ${escapeHtml(asset.name)}"></label>
+        <button type="button" class="asset-open" data-pick-open="${asset.id}"><img src="${asset.thumbnail_url}" alt="${escapeHtml(asset.name)}" loading="lazy"></button>
+        <div class="asset-card-info"><h3 title="${escapeHtml(asset.name)}">${escapeHtml(asset.name)}</h3><p>${asset.width} × ${asset.height}</p></div>
+      </article>`).join("") : '<div class="full-empty">没有匹配的图片。</div>';
+    $$("[data-pick]", grid).forEach(input => input.addEventListener("change", () => {
+      if (input.checked) {
+        if (state.anim.picker.size >= 24) { input.checked = false; toast("一个动图最多 24 帧。", "error"); return; }
+        state.anim.picker.add(input.dataset.pick);
+      } else state.anim.picker.delete(input.dataset.pick);
+      $("[data-picker-count]", overlay).textContent = `已选 ${state.anim.picker.size} 张`;
+      $("[data-picker-confirm]", overlay).disabled = state.anim.picker.size === 0;
+      renderGrid(items);
+    }));
+    $$("[data-pick-open]", grid).forEach(button => button.addEventListener("click", () => {
+      const id = button.dataset.pickOpen;
+      if (state.anim.picker.has(id)) state.anim.picker.delete(id);
+      else state.anim.picker.add(id);
+      $("[data-picker-count]", overlay).textContent = `已选 ${state.anim.picker.size} 张`;
+      $("[data-picker-confirm]", overlay).disabled = state.anim.picker.size === 0;
+      renderGrid(items);
+    }));
+  };
+
+  const loadPicker = async () => {
+    const query = new URLSearchParams({
+      q: $("[data-picker-search]", overlay).value,
+      kind: $("[data-picker-kind]", overlay).value,
+      limit: "120",
+    });
+    const result = await api(`/assets?${query}`);
+    if (state.anim.pickerToken !== token) return;
+    rememberAssets(result.items);
+    renderGrid(result.items);
+  };
+  let pickerSearchTimeout;
+  $("[data-picker-search]", overlay).addEventListener("input", () => {
+    clearTimeout(pickerSearchTimeout);
+    pickerSearchTimeout = setTimeout(() => loadPicker().catch(error => toast(error.message, "error")), 250);
+  });
+  $("[data-picker-kind]", overlay).addEventListener("change", () => loadPicker().catch(error => toast(error.message, "error")));
+  $("[data-picker-confirm]", overlay).addEventListener("click", () => {
+    const additions = [...state.anim.picker].filter(id => !state.anim.frames.some(frame => frame.asset_id === id));
+    const room = 24 - state.anim.frames.length;
+    additions.slice(0, room).forEach(id => state.anim.frames.push({ asset_id: id, duration_ms: state.anim.defaultDuration }));
+    close();
+    markAnimDirty();
+    renderAnimFrames();
+    if (additions.length > room) toast(`已达到 24 帧上限，只加入了前 ${room} 张。`, "info");
+  });
+  loadPicker().catch(error => { toast(error.message, "error"); close(); });
+}
+
+function bindAnimationEvents() {
+  on("#library-gif", "click", () => openAnimation([...state.selected]));
+  on("#anim-add", "click", openAnimPicker);
+  on("#anim-canvas-mode", "change", event => {
+    $("#anim-custom-size").hidden = event.target.value !== "custom";
+    markAnimDirty();
+  });
+  ["#anim-width", "#anim-height", "#anim-fit", "#anim-background", "#anim-alpha", "#anim-colors", "#anim-dither", "#anim-loop"]
+    .forEach(selector => on(selector, "change", markAnimDirty));
+  on("#anim-default-duration", "input", event => {
+    state.anim.defaultDuration = Number(event.target.value);
+    $("#anim-default-value").textContent = event.target.value;
+  });
+  on("#anim-preview-button", "click", refreshAnimPreview);
+  on("#anim-download-button", "click", downloadAnimation);
+  on("#animation-dialog", "close", () => {
+    if (state.anim.previewUrl) { URL.revokeObjectURL(state.anim.previewUrl); state.anim.previewUrl = null; }
+    state.anim.pickerToken += 1;
+  });
+}
+
 function bindEvents() {
   $$("[data-view]").forEach(button => button.addEventListener("click", () => setView(button.dataset.view)));
   $$("[data-panel]").forEach(button => button.addEventListener("click", () => setPanel(button.dataset.panel)));
@@ -626,6 +943,7 @@ function bindEvents() {
     } finally { $("#submit-job").disabled = false; }
   });
   on("#system-button", "click", showSystem);
+  bindAnimationEvents();
   document.addEventListener("keydown", event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "o") {
       event.preventDefault(); $("#file-input").click();
