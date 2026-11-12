@@ -71,6 +71,80 @@ def test_strict_parameter_validation(registry, params):
         registry.validate_step({"operation": "color_brightness", "params": params})
 
 
+def test_bilateral_has_no_band_seams(registry, tmp_path):
+    # A smooth vertical gradient must stay smooth after bilateral filtering:
+    # the old stripe implementation produced fixed-pitch horizontal seams.
+    height, width = 130, 24
+    ramp = np.linspace(0, 255, height, dtype=np.float32)[:, None, None]
+    rgb = np.repeat(np.repeat(ramp, width, axis=1), 3, axis=2).astype(np.uint8)
+    image = Image.fromarray(
+        np.dstack([rgb, np.full((height, width), 255, dtype=np.uint8)]), "RGBA"
+    )
+    output = registry.apply(
+        image, {"operation": "enhance_bilateral", "params": {"radius": 2, "sigma": 30.0}},
+        OperationContext(Settings(root=tmp_path)),
+    )
+    channel = np.asarray(output.convert("RGB"), dtype=np.float32)[:, width // 2, 0]
+    step = np.abs(np.diff(channel))
+    assert step.max() <= step.mean() + 3 * step.std()
+
+
+def test_bilateral_uses_shared_color_weight(registry, tmp_path):
+    # A blue pixel surrounded by strongly colored neighbors must not gain an
+    # invented hue from per-channel neighbor mixing.
+    image = Image.new("RGBA", (9, 9), (90, 90, 90, 255))
+    image.putpixel((4, 4), (10, 10, 200, 255))
+    image.putpixel((4, 5), (240, 240, 20, 255))
+    image.putpixel((3, 4), (200, 30, 30, 255))
+    image.putpixel((5, 4), (30, 200, 60, 255))
+    output = registry.apply(
+        image, {"operation": "enhance_bilateral", "params": {"radius": 2, "sigma": 60.0}},
+        OperationContext(Settings(root=tmp_path)),
+    )
+    red, green, blue = output.getpixel((4, 4))[:3]
+    # The center stays in the blue family instead of drifting toward gray.
+    assert blue > red and blue > green
+
+
+@pytest.mark.parametrize("size", [(1, 40), (40, 1), (1, 1), (3, 2), (2, 3), (65, 5)])
+def test_bilateral_handles_narrow_and_single_axis_images(registry, tmp_path, size):
+    pixels = np.random.default_rng(7).integers(0, 256, size=(*size, 4)).astype(np.uint8)
+    image = Image.fromarray(pixels, "RGBA")
+    output = registry.apply(
+        image, {"operation": "enhance_bilateral", "params": {"radius": 4, "sigma": 30.0}},
+        OperationContext(Settings(root=tmp_path)),
+    )
+    assert output.size == image.size and output.mode == "RGBA"
+    assert np.array_equal(np.asarray(output.getchannel("A")), pixels[..., 3])
+
+
+def test_bilateral_is_continuous_across_band_boundaries(registry, tmp_path):
+    # Rows on either side of an internal processing-band boundary must carry
+    # the same smooth statistics as rows well inside a band: the old stripe
+    # implementation created discontinuities every 32 rows.
+    rng = np.random.default_rng(11)
+    height, width = 128, 48
+    base = np.linspace(0, 255, height, dtype=np.float32)[:, None, None]
+    noise = rng.normal(0, 4, size=(height, width, 1))
+    rgb = np.clip(np.repeat(base, width, axis=1) + noise, 0, 255)
+    rgb = np.repeat(rgb, 3, axis=2).astype(np.uint8)
+    image = Image.fromarray(
+        np.dstack([rgb, np.full((height, width), 255, dtype=np.uint8)]), "RGBA"
+    )
+    output = np.asarray(
+        registry.apply(
+            image,
+            {"operation": "enhance_bilateral", "params": {"radius": 4, "sigma": 25.0}},
+            OperationContext(Settings(root=tmp_path)),
+        ).convert("RGB"),
+        dtype=np.float32,
+    )
+    step = np.abs(np.diff(output[:, width // 2, 0]))
+    interior = np.concatenate([step[8:56], step[72:120]])
+    boundary = step[60:68]
+    assert boundary.max() <= interior.mean() + 3 * interior.std()
+
+
 def test_odd_window_validation(registry):
     with pytest.raises(StudioError):
         registry.validate_step({"operation": "enhance_median", "params": {"size": 4}})
