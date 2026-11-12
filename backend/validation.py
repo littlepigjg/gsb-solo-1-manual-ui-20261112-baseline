@@ -107,6 +107,12 @@ def validate_parameter(spec, value):
         return color_value(value, label)
     if kind == "select":
         return choice_value(value, [item["value"] for item in spec["options"]], label)
+    if kind == "lut":
+        if not isinstance(value, str):
+            raise StudioError(f"{label}必须是文本")
+        if value == "":
+            return value
+        return identifier(value, label)
     if kind == "text":
         return text_value(value, label, spec.get("max_length", 120))
     raise RuntimeError(f"Unknown parameter kind: {kind}")

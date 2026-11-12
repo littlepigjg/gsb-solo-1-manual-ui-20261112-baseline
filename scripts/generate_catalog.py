@@ -198,6 +198,10 @@ op("color_vibrance", "自然饱和度", "color", "color", "优先增强低饱和
     number("amount", "自然饱和度", 35, -100, 100)])
 op("color_channel_mixer", "通道重排", "color", "color", "交换 RGB 通道，创造特殊色彩。", "Channel permutation and blending", [
     choice("order", "通道顺序", "bgr", [(item, item.upper()) for item in ["rgb", "rbg", "grb", "gbr", "brg", "bgr"]]), strength()])
+op("color_lut", "调色文件 LUT", "color", "color", "应用摄影师提供的 .cube 调色文件，可调节强度并保留透明通道。", "Domain mapping + trilinear 3D LUT interpolation", [
+    {"name": "lut_id", "label": "调色文件", "type": "lut", "default": "",
+     "help": "选择已上传的 .cube 调色文件；未选择时保持原图。", "group": "基础参数"},
+    strength(1.0)])
 
 op("filter_sepia", "复古棕褐", "filter", "artistic", "将影像转换为温暖的老照片色调。", "Sepia color matrix", [strength(0.85)])
 op("filter_vintage", "胶片时光", "filter", "artistic", "柔化黑白场，叠加暖调与暗角。", "Lifted blacks, warm gain and vignette", [

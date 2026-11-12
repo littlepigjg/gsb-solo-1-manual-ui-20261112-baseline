@@ -11,7 +11,7 @@ def test_home_and_health(client):
     assert client.get("/").status_code == 200
     health = client.get("/api/health").json["data"]
     assert health["features"] == 10
-    assert health["operations"] == 86
+    assert health["operations"] == 87
     assert client.get("/static/app.js").status_code == 200
 
 

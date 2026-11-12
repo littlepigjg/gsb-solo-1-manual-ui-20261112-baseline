@@ -16,6 +16,7 @@ from .analysis import AnalysisService
 from .presets import PresetService
 from .samples import SampleService
 from .diagnostics import DiagnosticsService
+from .luts import LutService
 from .errors import StudioError
 
 
@@ -25,7 +26,8 @@ def create_app(data_dir=None, testing=False):
     store = JsonStore(settings.database)
     registry = Registry()
     assets = AssetService(settings, store)
-    processing = ProcessingService(settings, store, assets, registry)
+    luts = LutService(settings, store)
+    processing = ProcessingService(settings, store, assets, registry, luts)
     jobs = JobService(settings, store, assets, processing)
     exports = ExportService(settings, store, assets, processing)
     presets = PresetService(store, registry)
@@ -41,6 +43,7 @@ def create_app(data_dir=None, testing=False):
         "analysis": AnalysisService(assets),
         "samples": SampleService(assets, store),
         "diagnostics": DiagnosticsService(settings, store),
+        "luts": luts,
     }
     app = Flask(__name__, root_path=".", static_folder=str(PROJECT_ROOT / "frontend"), static_url_path="/static")
     app.config.update(

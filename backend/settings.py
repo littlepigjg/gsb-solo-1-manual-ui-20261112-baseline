@@ -11,6 +11,7 @@ PROJECT_ROOT = Path(os.path.relpath(Path(__file__).parent.parent))
 class Settings:
     root: Path
     max_upload_bytes: int = 24 * 1024 * 1024
+    max_lut_bytes: int = 16 * 1024 * 1024
     max_pixels: int = 16_000_000
     max_dimension: int = 8192
     max_batch: int = 24
@@ -27,6 +28,10 @@ class Settings:
         return self.root / "media"
 
     @property
+    def luts(self):
+        return self.root / "luts"
+
+    @property
     def exports(self):
         return self.root / "exports"
 
@@ -35,17 +40,19 @@ class Settings:
         return self.root / "json"
 
     def prepare(self):
-        for directory in (self.root, self.media, self.exports, self.database):
+        for directory in (self.root, self.media, self.luts, self.exports, self.database):
             directory.mkdir(parents=True, exist_ok=True)
 
     def public(self):
         return {
             "max_upload_mb": self.max_upload_bytes // (1024 * 1024),
+            "max_lut_mb": self.max_lut_bytes // (1024 * 1024),
             "max_pixels": self.max_pixels,
             "max_dimension": self.max_dimension,
             "max_batch": self.max_batch,
             "max_steps": self.max_steps,
             "formats": ["PNG", "JPEG", "WEBP", "BMP", "TIFF", "GIF"],
+            "lut_formats": ["CUBE"],
             "storage": "JSON",
         }
 

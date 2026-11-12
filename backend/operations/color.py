@@ -157,3 +157,13 @@ def color_channel_mixer(image, p, context):
     result = array * (1 - p["strength"]) + remapped * p["strength"]
     return from_array(result, image)
 
+
+def color_lut(image, p, context):
+    if not p["lut_id"]:
+        return image  # 尚未选择调色文件时保持原图
+    service = getattr(context, "luts", None)
+    if service is None:
+        raise StudioError("调色文件服务不可用", code="lut_service_unavailable")
+    lut = service.get_lut(p["lut_id"])
+    return lut.apply(image, p["strength"])
+

@@ -134,6 +134,31 @@ def compare():
     return ok(service("analysis").compare(data.get("first_id"), data.get("second_id")))
 
 
+@api.get("/luts")
+def lut_list():
+    return ok(service("luts").list())
+
+
+@api.post("/luts")
+def lut_upload():
+    file = request.files.get("file")
+    if file is None:
+        raise StudioError("请选择 .cube 调色文件")
+    limit = service("settings").max_lut_bytes
+    return ok(service("luts").upload(file.stream.read(limit + 1), file.filename), 201)
+
+
+@api.get("/luts/<lut_id>")
+def lut_get(lut_id):
+    return ok(service("luts").get(lut_id))
+
+
+@api.delete("/luts/<lut_id>")
+def lut_delete(lut_id):
+    service("luts").delete(lut_id)
+    return ok({"deleted": lut_id})
+
+
 @api.post("/process")
 def process():
     data = payload({"asset_id", "steps", "name"})

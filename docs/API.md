@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | GET | `/health` | 健康检查、版本、功能数量 |
 | GET | `/config` | 文件大小、尺寸、批量数量限制 |
-| GET | `/catalog` | 全部功能分组、86 种操作与参数定义 |
+| GET | `/catalog` | 全部功能分组、87 种操作与参数定义 |
 | GET | `/stats` | 素材、结果、导出、批次统计 |
 | GET | `/diagnostics` | 依赖版本、JSON 与文件完整性检查 |
 | GET | `/assets` | 素材查询，支持 q/kind/favorite/limit/offset |
@@ -21,6 +21,10 @@
 | GET | `/assets/{id}/history` | 从原图到当前结果的版本链 |
 | GET | `/assets/{id}/analysis` | 图像直方图、色谱及亮度分析 |
 | POST | `/compare` | 采样误差、PSNR 等比较指标 |
+| GET | `/luts` | 列出已上传的 .cube 调色文件 |
+| POST | `/luts` | multipart 上传 .cube 调色文件，先校验再落盘 |
+| GET | `/luts/{id}` | 调色文件表类型、定义域与输出范围 |
+| DELETE | `/luts/{id}` | 删除未被预设引用的调色文件 |
 | POST | `/process` | 执行流程并保存新副本 |
 | POST | `/preview` | 执行流程并返回临时 PNG，不写入素材库 |
 | POST | `/samples` | 幂等生成三个示例素材，body 为 `{}` |
@@ -55,6 +59,36 @@
 `name` 可省略。未指定的参数采用 `/catalog` 中的默认值；未知参数、字符串形式数字、布尔值充当数字、非有限浮点数及越界数值都会被拒绝。相互依赖参数（如色阶黑场必须小于白场）在算法执行前继续验证。
 
 成功返回的新素材包含 `id`、`parent_id`、`root_id`、`steps`、`url`、`thumbnail_url`、尺寸、字节数和处理耗时。原图文件不变。
+
+## 调色文件（.cube LUT）
+
+上传使用 multipart 的 `file` 字段，成功后返回：
+
+```json
+{
+  "id": "32位id",
+  "name": "摄影师风格.cube",
+  "title": "文件内 TITLE 声明",
+  "kind": "3d",
+  "size": 33,
+  "points": 35937,
+  "domain_min": [0.0, 0.0, 0.0],
+  "domain_max": [1.0, 1.0, 1.0],
+  "output_range": {"red": [0.0, 1.0], "green": [0.02, 0.98], "blue": [0.0, 1.0]},
+  "bytes": 812040,
+  "sha256": "…"
+}
+```
+
+`kind` 为 `1d`（一维曲线）或 `3d`（三维晶格，按蓝、绿、红顺序解析，红变化最快）。`domain_min`/`domain_max` 是这张表适用的输入颜色范围，`output_range` 是表内实际输出范围。应用通过 `color_lut` 操作：
+
+```json
+{"operation": "color_lut", "params": {"lut_id": "调色文件id", "strength": 0.8}}
+```
+
+落在采样点之间的颜色做三线性插值；超出定义域的颜色钳制到边界晶格；`strength` 为 0 时逐像素返回原图，为 1 时应用完整效果，中间值按比例混合；透明通道始终沿用原片。`lut_id` 为空字符串时操作不改变图像。
+
+解析在写盘前完成：空文件、缺少尺寸声明、配置重复（`LUT_*_SIZE`、`DOMAIN_*`）、一维三维同时声明、尺寸越界、定义域反转、数据行数与声明不符、数值无法解析或非有限数都会返回 400 并在 `message` 中说明原因，且不产生任何记录或文件。删除一个仍被预设步骤引用的调色文件返回 409。
 
 ## 批量请求
 

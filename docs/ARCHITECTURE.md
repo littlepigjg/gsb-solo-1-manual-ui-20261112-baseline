@@ -55,12 +55,15 @@ Flask 路由与错误边界
 | assets | name、kind、width、height、sha256、parent_id、root_id、steps、metadata |
 | jobs | title、asset_ids、steps、status、progress、results、errors |
 | presets | name、description、steps、readonly、builtin_key |
+| luts | name、title、kind、size、points、domain_min、domain_max、output_range、sha256 |
 | events | action、message、details |
 | exports | filename、download_name、asset_ids、options、kind、bytes |
 
 锁覆盖 JSON 读改写全过程，写入采用新临时文件、flush/fsync、备份旧文件、`os.replace`。读到损坏 JSON 时尝试恢复上一个有效备份；无有效备份时明确失败，不静默重置数据。
 
-图片文件与 JSON 不是一个跨文件事务。服务写入失败会清理新建图片，但突然断电仍可能遗留孤立文件，诊断接口会列出。完整备份需要同时保存 `data/json`、`data/media`、`data/exports`。
+图片文件与 JSON 不是一个跨文件事务。服务写入失败会清理新建图片，但突然断电仍可能遗留孤立文件，诊断接口会列出。完整备份需要同时保存 `data/json`、`data/media`、`data/luts`、`data/exports`。
+
+`.cube` 调色文件原文按 `data/luts/{id}.cube` 保存，解析在写盘前完成，损坏文件不会落盘；`color_lut` 操作经 `OperationContext.luts` 取得解析缓存，对像素做定义域映射与三线性插值，强度为 0 直接返回原图，透明通道不参与调色。
 
 ## 任务与资源控制
 

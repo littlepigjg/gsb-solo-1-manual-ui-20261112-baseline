@@ -9,6 +9,7 @@ from .validation import object_value, reject_unknown, validate_parameters, list_
 class OperationContext:
     settings: object
     assets: object = None
+    luts: object = None
 
 
 class Registry:

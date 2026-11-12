@@ -8,6 +8,7 @@ const state = {
   assets: [], assetMap: new Map(), assetTotal: 0, selected: new Set(),
   pipeline: [], presets: [], jobs: [], busy: false, comparing: false,
   selectionToken: 0, libraryToken: 0, exportIds: [], jobPoll: null,
+  luts: [], lutToken: 0, lutPreviewTimer: null, lutPreviewUrl: null,
 };
 
 const paths = {
@@ -180,6 +181,12 @@ function renderParameters() {
       control = `<label for="${id}">${label}</label><select id="${id}" name="${field.name}">${field.options.map(option => `<option value="${escapeHtml(option.value)}" ${option.value === value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}</select>`;
     } else if (field.type === "boolean") {
       control = `<label for="${id}" class="checkbox-label"><input id="${id}" name="${field.name}" type="checkbox" ${value ? "checked" : ""}>${label}</label><small class="field-help">${escapeHtml(field.help)}</small>`;
+    } else if (field.type === "lut") {
+      control = `<label for="${id}">${label}</label>
+        <div class="lut-picker"><select id="${id}" name="${field.name}" aria-label="${label}"><option value="">选择已上传的 .cube 文件…</option>${state.luts.map(lut => `<option value="${lut.id}">${escapeHtml(lut.name)}</option>`).join("")}</select><button type="button" id="lut-upload-button" class="button subtle small"><span data-icon="upload"></span>上传</button></div>
+        <small class="field-help">${escapeHtml(field.help)}</small>
+        <div id="lut-info" class="lut-info" hidden></div>
+        <div class="lut-actions"><button type="button" id="lut-refresh" class="text-button">刷新预览</button><button type="button" id="lut-delete" class="text-button danger-text" disabled>删除该调色文件</button></div>`;
     } else {
       control = `<label for="${id}">${label}</label><input id="${id}" name="${field.name}" type="${field.type === "color" ? "color" : "text"}" value="${escapeHtml(value)}" ${field.max_length ? `maxlength="${field.max_length}"` : ""}>`;
     }
@@ -188,9 +195,156 @@ function renderParameters() {
   operation.parameters.filter(field => ["integer", "number"].includes(field.type)).forEach(field => {
     const range = $(`#param-${field.name}`);
     const number = $(`#param-${field.name}-number`);
-    range.addEventListener("input", () => { number.value = range.value; });
-    number.addEventListener("input", () => { range.value = number.value; });
+    range.addEventListener("input", () => { number.value = range.value; scheduleLutPreview(range); });
+    number.addEventListener("input", () => { range.value = number.value; scheduleLutPreview(number); });
   });
+  const lutField = operation.parameters.find(field => field.type === "lut");
+  if (lutField) bindLutControls(lutField);
+  else hideLutPreview();
+}
+
+function selectedLut() {
+  const select = $("#param-lut_id");
+  return select ? state.luts.find(lut => lut.id === select.value) : null;
+}
+
+function bindLutControls(lutField) {
+  const select = $("#param-lut_id");
+  select.value = lutField.default;
+  updateLutInfo();
+  select.addEventListener("change", () => { updateLutInfo(); requestLutPreview(); });
+  $("#lut-upload-button").addEventListener("click", () => $("#lut-file-input").click());
+  $("#lut-refresh").addEventListener("click", () => requestLutPreview());
+  $("#lut-delete").addEventListener("click", () => confirmLutDelete());
+  const badge = $("#lut-preview-badge");
+  badge.addEventListener("click", () => $("#lut-preview-layer").hidden = true);
+  badge.addEventListener("keydown", event => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      $("#lut-preview-layer").hidden = true;
+    }
+  });
+  if (state.current) requestLutPreview();
+}
+
+function updateLutInfo() {
+  const info = $("#lut-info");
+  const deleteButton = $("#lut-delete");
+  const lut = selectedLut();
+  if (!lut) {
+    info.hidden = true;
+    deleteButton.disabled = true;
+    return;
+  }
+  const kind = lut.kind === "3d"
+    ? `三维晶格 ${lut.size}×${lut.size}×${lut.size}（${lut.points} 个采样点）`
+    : `一维曲线 ${lut.size} 级（${lut.points} 个采样点）`;
+  const fmt = value => Number(value).toFixed(3);
+  info.innerHTML = `<strong title="${escapeHtml(lut.title || lut.name)}">${escapeHtml(lut.title || lut.name)}</strong>
+    表类型：${kind}<br>
+    适用输入范围（R / G / B）：${lut.domain_min.map(fmt).join(" / ")} 至 ${lut.domain_max.map(fmt).join(" / ")}<br>
+    实际输出范围：<span class="lut-range">R ${lut.output_range.red.map(fmt).join("–")} · G ${lut.output_range.green.map(fmt).join("–")} · B ${lut.output_range.blue.map(fmt).join("–")}</span>`;
+  info.hidden = false;
+  deleteButton.disabled = false;
+}
+
+function scheduleLutPreview(element) {
+  if (state.operation !== "color_lut" || !selectedLut()) return;
+  clearTimeout(state.lutPreviewTimer);
+  state.lutPreviewTimer = setTimeout(() => {
+    if (element && !element.checkValidity()) return;
+    requestLutPreview();
+  }, 180);
+}
+
+async function requestLutPreview() {
+  if (state.operation !== "color_lut" || !state.current) { hideLutPreview(); return; }
+  const lut = selectedLut();
+  if (!lut) { hideLutPreview(); return; }
+  const strengthInput = $("#param-strength-number");
+  const strength = strengthInput && strengthInput.checkValidity() && strengthInput.value !== ""
+    ? Number(strengthInput.value) : 1.0;
+  const step = { operation: "color_lut", params: { lut_id: lut.id, strength } };
+  const token = ++state.lutToken;
+  try {
+    const response = await fetch("/api/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ asset_id: state.current.id, steps: [step] }),
+    });
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(result?.error?.message || `预览失败（${response.status}）`);
+    }
+    const blob = await response.blob();
+    if (token !== state.lutToken) return;
+    if (state.lutPreviewUrl) URL.revokeObjectURL(state.lutPreviewUrl);
+    state.lutPreviewUrl = URL.createObjectURL(blob);
+    $("#lut-preview-image").src = state.lutPreviewUrl;
+    $("#lut-preview-badge").textContent = `LUT 预览 · 强度 ${Number(step.params.strength).toFixed(2)} · 点击收起`;
+    $("#lut-preview-layer").hidden = false;
+  } catch (error) {
+    if (token === state.lutToken) toast(error.message, "error");
+  }
+}
+
+function hideLutPreview() {
+  state.lutToken += 1;
+  clearTimeout(state.lutPreviewTimer);
+  $("#lut-preview-layer").hidden = true;
+  if (state.lutPreviewUrl) {
+    URL.revokeObjectURL(state.lutPreviewUrl);
+    state.lutPreviewUrl = null;
+  }
+}
+
+async function importLutFile(file) {
+  if (!file) return;
+  const body = new FormData();
+  body.append("file", file);
+  try {
+    const lut = await api("/luts", { method: "POST", body });
+    state.luts.unshift(lut);
+    const select = $("#param-lut_id");
+    if (select) {
+      select.insertAdjacentHTML("beforeend", `<option value="${lut.id}">${escapeHtml(lut.name)}</option>`);
+      select.value = lut.id;
+      updateLutInfo();
+      requestLutPreview();
+    }
+    toast(`调色文件“${lut.name}”已导入`);
+  } catch (error) {
+    toast(error.message, "error");
+  }
+  $("#lut-file-input").value = "";
+}
+
+function confirmLutDelete() {
+  const lut = selectedLut();
+  if (!lut) return;
+  $("#confirm-message").textContent = `删除调色文件“${lut.name}”？如已有预设引用它，需要先修改对应预设。`;
+  $("#confirm-dialog").showModal();
+  $("#confirm-action").onclick = async () => {
+    $("#confirm-action").disabled = true;
+    try {
+      await api(`/luts/${lut.id}`, { method: "DELETE" });
+      state.luts = state.luts.filter(item => item.id !== lut.id);
+      $("#confirm-dialog").close();
+      const select = $("#param-lut_id");
+      if (select) {
+        select.querySelector(`option[value="${lut.id}"]`)?.remove();
+        select.value = "";
+        updateLutInfo();
+      }
+      hideLutPreview();
+      toast("调色文件已删除");
+    } catch (error) {
+      $("#confirm-dialog").close();
+      toast(error.message, "error");
+    } finally {
+      $("#confirm-action").disabled = false;
+    }
+  };
 }
 
 function readStep() {
@@ -239,6 +393,7 @@ async function selectAsset(id, switchView = false) {
   localStorage.setItem("studio-current", id);
   setComparison(false);
   state.root = null;
+  hideLutPreview();
   renderFilmstrip();
   if (state.operation === "crop_rect") renderParameters();
   if (switchView) setView("editor");
@@ -246,6 +401,7 @@ async function selectAsset(id, switchView = false) {
   if (token !== state.selectionToken) return;
   state.root = root;
   $("#original-image").src = root.url;
+  if (state.operation === "color_lut") requestLutPreview();
   if (state.panel === "info") await loadAnalysis();
 }
 
@@ -267,6 +423,7 @@ async function processSteps(steps) {
     const result = await api("/process", { method: "POST", body: { asset_id: asset.id, steps } });
     state.assetMap.set(result.id, result);
     setBusy(false);
+    hideLutPreview();
     await selectAsset(result.id);
     await refreshStats();
     toast(`已完成处理，保存为新副本 · ${result.metadata.elapsed_ms} ms`);
@@ -549,6 +706,7 @@ function bindEvents() {
   $$(".close-dialog").forEach(button => button.addEventListener("click", () => button.closest("dialog").close()));
   ["#top-upload", "#empty-upload", "#library-upload"].forEach(selector => on(selector, "click", () => $("#file-input").click()));
   on("#file-input", "change", event => importFiles([...event.target.files]));
+  on("#lut-file-input", "change", event => importLutFile(event.target.files[0]));
   on("#operation-select", "change", () => { state.operation = $("#operation-select").value; renderParameters(); });
   on("#parameter-form", "submit", event => event.preventDefault());
   on("#reset-params", "click", () => { renderParameters(); toast("参数已重置", "info"); });
@@ -646,8 +804,8 @@ function bindEvents() {
 
 async function bootstrap() {
   hydrateIcons();
-  const [catalog, config, library, presets] = await Promise.all([api("/catalog"), api("/config"), api("/assets?limit=60"), api("/presets")]);
-  Object.assign(state, { catalog, config, presets, assets: library.items, assetTotal: library.total });
+  const [catalog, config, library, presets, luts] = await Promise.all([api("/catalog"), api("/config"), api("/assets?limit=60"), api("/presets"), api("/luts")]);
+  Object.assign(state, { catalog, config, presets, luts, assets: library.items, assetTotal: library.total });
   rememberAssets(library.items);
   bindEvents();
   chooseCategory("color", "color_levels");

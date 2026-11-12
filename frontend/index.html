@@ -45,7 +45,7 @@
             <div id="canvas-area" class="canvas-area">
               <div class="canvas-corner tl"></div><div class="canvas-corner tr"></div><div class="canvas-corner bl"></div><div class="canvas-corner br"></div>
               <div id="empty-state" class="empty-state"><div class="empty-icon" data-icon="image"></div><h2>你的下一幅作品，从这里开始</h2><p>拖入图片，或选择本地文件</p><button id="empty-upload" class="button dark">选择图片</button><small>PNG / JPG / WebP / BMP / TIFF / GIF · 最大 24 MB</small></div>
-              <div id="image-stage" class="image-stage" hidden><img id="preview-image" alt="当前图像处理结果"><div id="original-layer" class="original-layer" hidden><img id="original-image" alt="最初导入的原图"></div><div id="comparison-line" class="comparison-line" hidden><span>↔</span></div><div id="comparison-labels" class="comparison-labels" hidden><span>原图</span><span>当前结果</span></div></div>
+              <div id="image-stage" class="image-stage" hidden><img id="preview-image" alt="当前图像处理结果"><div id="original-layer" class="original-layer" hidden><img id="original-image" alt="最初导入的原图"></div><div id="lut-preview-layer" class="lut-preview-layer" hidden><img id="lut-preview-image" alt="调色文件预览效果"><span id="lut-preview-badge" class="lut-preview-badge" role="button" tabindex="0" title="点击收起 LUT 预览"></span></div><div id="comparison-line" class="comparison-line" hidden><span>↔</span></div><div id="comparison-labels" class="comparison-labels" hidden><span>原图</span><span>当前结果</span></div></div>
               <div id="canvas-busy" class="canvas-busy" hidden><span class="spinner"></span><strong>正在处理画面</strong><small>完成后将保留一个新的处理副本</small></div>
             </div>
             <div id="comparison-control" class="comparison-control" hidden><label for="comparison-range">原图</label><input id="comparison-range" type="range" min="0" max="100" value="50" aria-label="原图对比位置"><span>处理结果</span></div>
@@ -77,7 +77,7 @@
             <div class="inspector-export"><div><strong>完成这一次创作</strong><p>选择格式，将作品带走</p></div><button id="export-button" class="button outline"><span data-icon="download"></span>导出</button></div>
           </aside>
         </div>
-        <div class="workspace-footnote"><span>光屿 / 为日常影像留一点创作空间</span><span>10 项功能 · <span id="operation-total">86</span> 种处理方式 · 本地运行</span></div>
+        <div class="workspace-footnote"><span>光屿 / 为日常影像留一点创作空间</span><span>10 项功能 · <span id="operation-total">87</span> 种处理方式 · 本地运行</span></div>
       </section>
 
       <section id="library-view" class="view">
@@ -94,6 +94,7 @@
   </div>
 
   <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff,image/gif" multiple hidden>
+  <input id="lut-file-input" type="file" accept=".cube,text/plain" hidden>
   <div id="drop-overlay" class="drop-overlay" hidden><span data-icon="upload"></span><h2>松开鼠标，导入你的画面</h2><p>文件仅保存在本机</p></div>
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
