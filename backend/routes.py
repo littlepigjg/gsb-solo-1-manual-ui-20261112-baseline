@@ -26,7 +26,7 @@ def ok(data=None, status=200):
 
 @api.get("/health")
 def health():
-    return ok({"status": "ready", "version": "1.0.0", "storage": "JSON", "features": 10, "operations": len(service("registry").specs)})
+    return ok({"status": "ready", "version": "1.0.0", "storage": "JSON", "features": len(service("registry").categories), "operations": len(service("registry").specs)})
 
 
 @api.get("/config")
@@ -121,6 +121,57 @@ def asset_thumbnail(asset_id):
 @api.get("/assets/<asset_id>/history")
 def asset_history(asset_id):
     return ok(service("assets").history(asset_id))
+
+
+@api.get("/masks")
+def mask_list():
+    return ok(service("masks").list())
+
+
+@api.post("/masks")
+def mask_upload():
+    file = request.files.get("file")
+    if file is None:
+        raise StudioError("请选择蒙版图片文件")
+    limit = service("settings").max_upload_bytes
+    mask = service("masks").upload(file.stream.read(limit + 1), file.filename)
+    return ok(mask, 201)
+
+
+@api.get("/masks/<mask_id>")
+def mask_get(mask_id):
+    return ok(service("masks").get(mask_id))
+
+
+@api.delete("/masks/<mask_id>")
+def mask_delete(mask_id):
+    service("masks").delete(mask_id)
+    return ok({"deleted": mask_id})
+
+
+@api.get("/masks/<mask_id>/file")
+def mask_file(mask_id):
+    path, record = service("masks").file(mask_id)
+    return send_file(path, mimetype="image/png", conditional=True)
+
+
+@api.get("/masks/<mask_id>/thumbnail")
+def mask_thumbnail(mask_id):
+    path, record = service("masks").file(mask_id, thumbnail=True)
+    return send_file(path, mimetype="image/png", conditional=True)
+
+
+@api.post("/masks/render")
+def mask_render():
+    data = payload({"asset_id", "mask_id", "mode", "invert", "feather"})
+    buffer = service("masks").render_coverage_preview(
+        data.get("asset_id"),
+        data.get("mask_id"),
+        data.get("mode", "luminance"),
+        data.get("invert", False),
+        data.get("feather", 0),
+    )
+    return send_file(buffer, mimetype="image/png", max_age=0)
 
 
 @api.get("/assets/<asset_id>/analysis")

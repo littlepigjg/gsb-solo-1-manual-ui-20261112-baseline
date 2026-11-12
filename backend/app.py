@@ -9,6 +9,7 @@ from .settings import Settings, PROJECT_ROOT
 from .storage import JsonStore
 from .registry import Registry
 from .assets import AssetService
+from .masks import MaskService
 from .processing import ProcessingService
 from .jobs import JobService
 from .exports import ExportService
@@ -25,7 +26,8 @@ def create_app(data_dir=None, testing=False):
     store = JsonStore(settings.database)
     registry = Registry()
     assets = AssetService(settings, store)
-    processing = ProcessingService(settings, store, assets, registry)
+    masks = MaskService(settings, store, assets)
+    processing = ProcessingService(settings, store, assets, registry, masks)
     jobs = JobService(settings, store, assets, processing)
     exports = ExportService(settings, store, assets, processing)
     presets = PresetService(store, registry)
@@ -34,6 +36,7 @@ def create_app(data_dir=None, testing=False):
         "store": store,
         "registry": registry,
         "assets": assets,
+        "masks": masks,
         "processing": processing,
         "jobs": jobs,
         "exports": exports,

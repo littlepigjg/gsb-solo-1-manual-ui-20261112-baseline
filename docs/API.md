@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | GET | `/health` | 健康检查、版本、功能数量 |
 | GET | `/config` | 文件大小、尺寸、批量数量限制 |
-| GET | `/catalog` | 全部功能分组、86 种操作与参数定义 |
+| GET | `/catalog` | 全部功能分组、87 种操作与参数定义 |
 | GET | `/stats` | 素材、结果、导出、批次统计 |
 | GET | `/diagnostics` | 依赖版本、JSON 与文件完整性检查 |
 | GET | `/assets` | 素材查询，支持 q/kind/favorite/limit/offset |
@@ -20,6 +20,13 @@
 | GET | `/assets/{id}/thumbnail` | 读取缩略图 |
 | GET | `/assets/{id}/history` | 从原图到当前结果的版本链 |
 | GET | `/assets/{id}/analysis` | 图像直方图、色谱及亮度分析 |
+| GET | `/masks` | 蒙版列表（内置渐变与已导入） |
+| POST | `/masks` | multipart 蒙版图片上传 |
+| GET | `/masks/{id}` | 蒙版详细信息 |
+| DELETE | `/masks/{id}` | 删除已导入蒙版（内置或被预设引用的不可删） |
+| GET | `/masks/{id}/file` | 读取蒙版 PNG |
+| GET | `/masks/{id}/thumbnail` | 读取蒙版缩略图 |
+| POST | `/masks/render` | 按素材尺寸渲染覆盖范围灰度 PNG，不写入数据 |
 | POST | `/compare` | 采样误差、PSNR 等比较指标 |
 | POST | `/process` | 执行流程并保存新副本 |
 | POST | `/preview` | 执行流程并返回临时 PNG，不写入素材库 |
@@ -55,6 +62,33 @@
 `name` 可省略。未指定的参数采用 `/catalog` 中的默认值；未知参数、字符串形式数字、布尔值充当数字、非有限浮点数及越界数值都会被拒绝。相互依赖参数（如色阶黑场必须小于白场）在算法执行前继续验证。
 
 成功返回的新素材包含 `id`、`parent_id`、`root_id`、`steps`、`url`、`thumbnail_url`、尺寸、字节数和处理耗时。原图文件不变。
+
+## 蒙版局部调整
+
+`mask_local_adjust` 把一次色彩调整限制在蒙版覆盖的区域内：
+
+```json
+{
+  "asset_id": "图片id",
+  "steps": [
+    {"operation": "mask_local_adjust", "params": {
+      "mask_id": "蒙版id",
+      "mode": "luminance",
+      "invert": false,
+      "feather": 24,
+      "strength": 1.0,
+      "adjustment": {"operation": "color_brightness", "params": {"factor": 1.3}}
+    }}
+  ]
+}
+```
+
+- `mask_id`：`/masks` 中的蒙版 id。四个内置渐变蒙版（径向、线性、圆形、暗角框）自动匹配任意图片尺寸；导入的蒙版必须与当前图片宽高完全一致，否则返回 400 `mask_size_mismatch`，不会生成半成品副本。
+- `mode`：`luminance` 用蒙版明暗决定覆盖（亮部覆盖），`alpha` 用蒙版透明度决定覆盖（不透明覆盖）。
+- `invert` 反转覆盖区域；`feather` 为 0–250 像素的边缘柔化半径；`strength` 为 0–1 的整体调整强度。
+- `adjustment` 是嵌套的处理步骤，只允许 `/catalog` 中该参数 `operations` 列出的色彩调整操作，参数同样经过严格校验。
+
+合成只按覆盖率混合 RGB：未覆盖区域逐像素保持原样，原始透明通道不变。结果副本的 `steps` 完整记录蒙版 id 与全部参数，处理历史可溯源。`POST /masks/render` 用相同参数返回覆盖范围灰度图（白色为覆盖），供界面叠加显示，不写入任何记录。
 
 ## 批量请求
 

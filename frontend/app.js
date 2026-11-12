@@ -8,6 +8,9 @@ const state = {
   assets: [], assetMap: new Map(), assetTotal: 0, selected: new Set(),
   pipeline: [], presets: [], jobs: [], busy: false, comparing: false,
   selectionToken: 0, libraryToken: 0, exportIds: [], jobPoll: null,
+  masks: [], maskId: null, maskAdjustOp: "color_brightness",
+  previewEnabled: true, previewActive: false, previewUrl: null, previewToken: 0, previewTimer: null,
+  showCoverage: false, coverageUrl: null, coverageToken: 0, coverageTimer: null,
 };
 
 const paths = {
@@ -33,6 +36,7 @@ const paths = {
   play: '<path d="m8 4 12 8-12 8Z"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="m10 3-1 3-3 1-3 3 2 2-1 4 3 1 2 4 3-1 4 1 1-3 4-2-1-3 1-4-3-1-2-3Z"/>',
+  mask: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17Z" fill="currentColor" stroke="none"/>',
 };
 
 function icon(name) {
@@ -77,6 +81,22 @@ async function api(path, options = {}) {
     throw new Error(result?.error?.message || `请求失败（${response.status}）`);
   }
   return result.data;
+}
+
+async function apiBlob(path, body) {
+  let response;
+  try {
+    response = await fetch(`/api${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch { throw new Error("无法连接本地服务，请运行 start.bat 后重试。"); }
+  if (!response.ok) {
+    const result = await response.json().catch(() => null);
+    throw new Error(result?.error?.message || `请求失败（${response.status}）`);
+  }
+  return response.blob();
 }
 
 function on(selector, event, handler) {
@@ -141,6 +161,8 @@ function renderTools() {
 
 function chooseCategory(category, operationId = null) {
   state.category = category;
+  clearPreview(false);
+  $("#coverage-overlay").hidden = true;
   const operations = state.catalog.operations.filter(operation => operation.category === category);
   state.operation = operationId || operations[0].id;
   const metadata = state.catalog.categories.find(item => item.id === category);
@@ -164,42 +186,41 @@ function defaultValue(field) {
   return field.default;
 }
 
-function renderParameters() {
-  const operation = findOperation(state.operation);
-  $("#operation-description").textContent = operation.description;
-  $("#parameter-form").innerHTML = operation.parameters.map(field => {
-    const id = `param-${field.name}`;
-    const value = defaultValue(field);
-    const label = escapeHtml(field.label);
-    let control;
-    if (["integer", "number"].includes(field.type)) {
-      control = `<label for="${id}">${label}<span><input class="number-entry" id="${id}-number" type="number" min="${field.min}" max="${field.max}" step="${field.step}" value="${value}" aria-label="${label}数值"><span class="unit">${escapeHtml(field.unit)}</span></span></label>
-        <input id="${id}" name="${field.name}" type="range" min="${field.min}" max="${field.max}" step="${field.step}" value="${value}">
-        <div class="range-endpoints"><span>${field.min}</span><span>${field.max}</span></div>`;
-    } else if (field.type === "select") {
-      control = `<label for="${id}">${label}</label><select id="${id}" name="${field.name}">${field.options.map(option => `<option value="${escapeHtml(option.value)}" ${option.value === value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}</select>`;
-    } else if (field.type === "boolean") {
-      control = `<label for="${id}" class="checkbox-label"><input id="${id}" name="${field.name}" type="checkbox" ${value ? "checked" : ""}>${label}</label><small class="field-help">${escapeHtml(field.help)}</small>`;
-    } else {
-      control = `<label for="${id}">${label}</label><input id="${id}" name="${field.name}" type="${field.type === "color" ? "color" : "text"}" value="${escapeHtml(value)}" ${field.max_length ? `maxlength="${field.max_length}"` : ""}>`;
-    }
-    return `<div class="parameter-field" title="${escapeHtml(field.help)}">${control}</div>`;
-  }).join("");
-  operation.parameters.filter(field => ["integer", "number"].includes(field.type)).forEach(field => {
-    const range = $(`#param-${field.name}`);
-    const number = $(`#param-${field.name}-number`);
+function parameterFieldHtml(field, idPrefix) {
+  const id = `${idPrefix}-${field.name}`;
+  const value = defaultValue(field);
+  const label = escapeHtml(field.label);
+  let control;
+  if (["integer", "number"].includes(field.type)) {
+    control = `<label for="${id}">${label}<span><input class="number-entry" id="${id}-number" type="number" min="${field.min}" max="${field.max}" step="${field.step}" value="${value}" aria-label="${label}数值"><span class="unit">${escapeHtml(field.unit)}</span></span></label>
+      <input id="${id}" name="${field.name}" type="range" min="${field.min}" max="${field.max}" step="${field.step}" value="${value}">
+      <div class="range-endpoints"><span>${field.min}</span><span>${field.max}</span></div>`;
+  } else if (field.type === "select") {
+    control = `<label for="${id}">${label}</label><select id="${id}" name="${field.name}">${field.options.map(option => `<option value="${escapeHtml(option.value)}" ${option.value === value ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}</select>`;
+  } else if (field.type === "boolean") {
+    control = `<label for="${id}" class="checkbox-label"><input id="${id}" name="${field.name}" type="checkbox" ${value ? "checked" : ""}>${label}</label><small class="field-help">${escapeHtml(field.help)}</small>`;
+  } else {
+    control = `<label for="${id}">${label}</label><input id="${id}" name="${field.name}" type="${field.type === "color" ? "color" : "text"}" value="${escapeHtml(value)}" ${field.max_length ? `maxlength="${field.max_length}"` : ""}>`;
+  }
+  return `<div class="parameter-field" title="${escapeHtml(field.help)}">${control}</div>`;
+}
+
+function bindParameterInputs(fields, idPrefix) {
+  fields.filter(field => ["integer", "number"].includes(field.type)).forEach(field => {
+    const range = $(`#${idPrefix}-${field.name}`);
+    const number = $(`#${idPrefix}-${field.name}-number`);
+    if (!range || !number) return;
     range.addEventListener("input", () => { number.value = range.value; });
     number.addEventListener("input", () => { range.value = number.value; });
   });
 }
 
-function readStep() {
-  const operation = findOperation(state.operation);
+function readParameterValues(fields, idPrefix) {
   const params = {};
-  for (const field of operation.parameters) {
-    const input = $(`#param-${field.name}`);
+  for (const field of fields) {
+    const input = $(`#${idPrefix}-${field.name}`);
     if (["integer", "number"].includes(field.type)) {
-      const number = $(`#param-${field.name}-number`);
+      const number = $(`#${idPrefix}-${field.name}-number`);
       if (!number.value.trim() || !number.checkValidity()) {
         number.reportValidity();
         throw new Error(`请检查“${field.label}”的数值范围。`);
@@ -208,7 +229,222 @@ function readStep() {
     } else if (field.type === "boolean") params[field.name] = input.checked;
     else params[field.name] = input.value;
   }
+  return params;
+}
+
+function visibleParameters(operation) {
+  if (operation.id === "mask_local_adjust") {
+    return operation.parameters.filter(field => !["mask_id", "adjustment"].includes(field.name));
+  }
+  return operation.parameters;
+}
+
+function renderParameters() {
+  const operation = findOperation(state.operation);
+  $("#operation-description").textContent = operation.description;
+  const fields = visibleParameters(operation);
+  $("#parameter-form").innerHTML = fields.map(field => parameterFieldHtml(field, "param")).join("");
+  bindParameterInputs(fields, "param");
+  renderMaskTools();
+}
+
+function readStep() {
+  const operation = findOperation(state.operation);
+  const params = readParameterValues(visibleParameters(operation), "param");
+  if (operation.id === "mask_local_adjust") {
+    if (!state.maskId) throw new Error("请先选择或导入一张蒙版。");
+    params.mask_id = state.maskId;
+    const adjustment = findOperation(state.maskAdjustOp);
+    params.adjustment = { operation: adjustment.id, params: readParameterValues(adjustment.parameters, "maskadj") };
+  }
   return { operation: operation.id, params };
+}
+
+function renderMaskTools() {
+  const active = state.operation === "mask_local_adjust";
+  $("#mask-tools").hidden = !active;
+  $("#mask-adjust-tools").hidden = !active;
+  if (!active) return;
+  if (!state.maskId || !state.masks.some(mask => mask.id === state.maskId)) {
+    state.maskId = state.masks[0]?.id || null;
+  }
+  $("#mask-tools").innerHTML = `
+    <div class="mask-picker-head"><span class="field-label" style="margin:0">选择蒙版</span><button type="button" id="mask-upload" class="text-button">${icon("plus")}导入蒙版</button></div>
+    <div class="mask-grid">${state.masks.map(mask => `
+      <div class="mask-item ${state.maskId === mask.id ? "active" : ""}" data-mask-item="${mask.id}">
+        <button type="button" class="mask-pick" data-mask-pick="${mask.id}" title="${escapeHtml(mask.description || mask.name)}">
+          <img src="${mask.thumbnail_url}" alt="${escapeHtml(mask.name)}" loading="lazy">
+          <span class="mask-name">${escapeHtml(mask.name)}</span>
+          <span class="mask-meta">${mask.kind === "builtin" ? "内置 · 自适应尺寸" : `${mask.width} × ${mask.height}`}</span>
+        </button>
+        ${mask.kind === "upload" ? `<button type="button" class="mask-delete" data-mask-delete="${mask.id}" aria-label="删除蒙版 ${escapeHtml(mask.name)}" title="删除蒙版">×</button>` : ""}
+      </div>`).join("")}</div>
+    <p class="mask-info" id="mask-info"></p>
+    <div class="mask-preview-controls">
+      <label class="checkbox-label"><input id="mask-live-preview" type="checkbox" ${state.previewEnabled ? "checked" : ""}>实时预览</label>
+      <label class="checkbox-label"><input id="mask-show-coverage" type="checkbox" ${state.showCoverage ? "checked" : ""}>显示覆盖范围</label>
+      <button type="button" id="mask-clear-preview" class="text-button">${icon("reset")}还原画面</button>
+    </div>`;
+  renderMaskAdjustment();
+  updateMaskInfo();
+  $$("[data-mask-pick]").forEach(button => button.addEventListener("click", () => {
+    state.maskId = button.dataset.maskPick;
+    $$("[data-mask-item]").forEach(item => item.classList.toggle("active", item.dataset.maskItem === state.maskId));
+    updateMaskInfo();
+    scheduleMaskPreview();
+    scheduleCoverage();
+  }));
+  $$("[data-mask-delete]").forEach(button => button.addEventListener("click", () => removeMask(button.dataset.maskDelete)));
+  $("#mask-upload").addEventListener("click", () => $("#mask-file-input").click());
+  $("#mask-live-preview").addEventListener("change", event => {
+    state.previewEnabled = event.target.checked;
+    if (state.previewEnabled) scheduleMaskPreview();
+    else clearPreview();
+  });
+  $("#mask-show-coverage").addEventListener("change", event => {
+    state.showCoverage = event.target.checked;
+    refreshCoverage();
+  });
+  $("#mask-clear-preview").addEventListener("click", () => clearPreview());
+  scheduleMaskPreview();
+  scheduleCoverage();
+}
+
+function renderMaskAdjustment() {
+  const spec = findOperation("mask_local_adjust");
+  const allowed = spec.parameters.find(field => field.name === "adjustment").operations;
+  if (!allowed.includes(state.maskAdjustOp)) state.maskAdjustOp = allowed[0];
+  const adjustment = findOperation(state.maskAdjustOp);
+  $("#mask-adjust-tools").innerHTML = `
+    <label class="field-label" for="mask-adjust-op">局部调整方式</label>
+    <select id="mask-adjust-op">${allowed.map(id => `<option value="${id}" ${id === state.maskAdjustOp ? "selected" : ""}>${escapeHtml(findOperation(id).title)}</option>`).join("")}</select>
+    <p class="operation-description" style="min-height:0;margin:0">${escapeHtml(adjustment.description)}</p>
+    <div class="parameter-form">${adjustment.parameters.map(field => parameterFieldHtml(field, "maskadj")).join("")}</div>`;
+  bindParameterInputs(adjustment.parameters, "maskadj");
+  $("#mask-adjust-op").addEventListener("change", event => {
+    state.maskAdjustOp = event.target.value;
+    renderMaskAdjustment();
+    scheduleMaskPreview();
+  });
+}
+
+function updateMaskInfo() {
+  const element = $("#mask-info");
+  if (!element) return;
+  const mask = state.masks.find(item => item.id === state.maskId);
+  if (!mask) {
+    element.className = "mask-info";
+    element.textContent = "还没有可用蒙版，请先导入。";
+    return;
+  }
+  if (mask.kind === "builtin") {
+    element.className = "mask-info";
+    element.textContent = "内置渐变蒙版自动匹配当前图片尺寸。";
+  } else if (state.current && (mask.width !== state.current.width || mask.height !== state.current.height)) {
+    element.className = "mask-warning";
+    element.textContent = `蒙版尺寸 ${mask.width} × ${mask.height} 与当前图片 ${state.current.width} × ${state.current.height} 不一致，无法应用。`;
+  } else {
+    element.className = "mask-info";
+    element.textContent = state.current ? `蒙版尺寸 ${mask.width} × ${mask.height}，与当前图片匹配。` : `蒙版尺寸 ${mask.width} × ${mask.height}。`;
+  }
+}
+
+function scheduleMaskPreview() {
+  if (state.operation !== "mask_local_adjust" || !state.previewEnabled) return;
+  clearTimeout(state.previewTimer);
+  state.previewTimer = setTimeout(() => { refreshMaskPreview().catch(() => {}); }, 350);
+}
+
+async function refreshMaskPreview() {
+  if (!state.current || state.busy || state.operation !== "mask_local_adjust" || !state.previewEnabled) return;
+  const token = ++state.previewToken;
+  let step;
+  try { step = readStep(); } catch { return; }
+  try {
+    const blob = await apiBlob("/preview", { asset_id: state.current.id, steps: [step] });
+    if (token !== state.previewToken) return;
+    if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
+    state.previewUrl = URL.createObjectURL(blob);
+    state.previewActive = true;
+    state.previewError = null;
+    $("#preview-image").src = state.previewUrl;
+    $("#preview-badge").hidden = false;
+  } catch (error) {
+    if (token !== state.previewToken) return;
+    clearPreview();
+    if (error.message !== state.previewError) toast(error.message, "error");
+    state.previewError = error.message;
+  }
+}
+
+function clearPreview(restore = true) {
+  state.previewToken += 1;
+  clearTimeout(state.previewTimer);
+  if (state.previewUrl) { URL.revokeObjectURL(state.previewUrl); state.previewUrl = null; }
+  if (state.previewActive && restore && state.current) $("#preview-image").src = state.current.url;
+  state.previewActive = false;
+  $("#preview-badge").hidden = true;
+}
+
+function scheduleCoverage() {
+  if (state.operation !== "mask_local_adjust") return;
+  clearTimeout(state.coverageTimer);
+  state.coverageTimer = setTimeout(() => { refreshCoverage().catch(() => {}); }, 350);
+}
+
+async function refreshCoverage() {
+  const token = ++state.coverageToken;
+  const overlay = $("#coverage-overlay");
+  if (!state.showCoverage || state.operation !== "mask_local_adjust" || !state.current || !state.maskId) {
+    overlay.hidden = true;
+    return;
+  }
+  try {
+    const blob = await apiBlob("/masks/render", {
+      asset_id: state.current.id,
+      mask_id: state.maskId,
+      mode: $("#param-mode")?.value || "luminance",
+      invert: $("#param-invert")?.checked || false,
+      feather: Number($("#param-feather-number")?.value || 0),
+    });
+    if (token !== state.coverageToken) return;
+    if (state.coverageUrl) URL.revokeObjectURL(state.coverageUrl);
+    state.coverageUrl = URL.createObjectURL(blob);
+    state.coverageError = null;
+    overlay.src = state.coverageUrl;
+    overlay.hidden = false;
+  } catch (error) {
+    if (token !== state.coverageToken) return;
+    overlay.hidden = true;
+    if (error.message !== state.coverageError) toast(error.message, "error");
+    state.coverageError = error.message;
+  }
+}
+
+async function refreshMasks(selectId = null) {
+  state.masks = await api("/masks");
+  if (selectId) state.maskId = selectId;
+  if (state.operation === "mask_local_adjust") renderMaskTools();
+}
+
+async function uploadMask(file) {
+  if (!file) return;
+  if (file.size > state.config.max_upload_mb * 1024 * 1024) throw new Error(`蒙版图片超过 ${state.config.max_upload_mb} MB。`);
+  const body = new FormData();
+  body.append("file", file);
+  const mask = await api("/masks", { method: "POST", body });
+  await refreshMasks(mask.id);
+  toast(`蒙版「${mask.name}」已导入`);
+}
+
+async function removeMask(id) {
+  const mask = state.masks.find(item => item.id === id);
+  confirmAction(`删除蒙版“${mask?.name || ""}”？已保存的处理副本不受影响。`, async () => {
+    await api(`/masks/${id}`, { method: "DELETE" });
+    if (state.maskId === id) state.maskId = null;
+    await refreshMasks();
+    toast("蒙版已删除");
+  });
 }
 
 function renderFilmstrip() {
@@ -238,6 +474,11 @@ async function selectAsset(id, switchView = false) {
   $("#undo-button").disabled = !asset.parent_id;
   localStorage.setItem("studio-current", id);
   setComparison(false);
+  clearPreview(false);
+  if (state.operation === "mask_local_adjust") {
+    updateMaskInfo();
+    scheduleCoverage();
+  }
   state.root = null;
   renderFilmstrip();
   if (state.operation === "crop_rect") renderParameters();
@@ -256,6 +497,8 @@ function setComparison(enabled) {
   $("#comparison-labels").hidden = !enabled;
   $("#comparison-control").hidden = !enabled;
   $("#compare-button").setAttribute("aria-pressed", String(enabled));
+  if (enabled) $("#coverage-overlay").hidden = true;
+  else if (state.showCoverage && state.operation === "mask_local_adjust") refreshCoverage().catch(() => {});
 }
 
 async function processSteps(steps) {
@@ -270,6 +513,7 @@ async function processSteps(steps) {
     await selectAsset(result.id);
     await refreshStats();
     toast(`已完成处理，保存为新副本 · ${result.metadata.elapsed_ms} ms`);
+    if (state.operation === "mask_local_adjust") scheduleMaskPreview();
   } finally { setBusy(false); $("#undo-button").disabled = !state.current?.parent_id; }
 }
 
@@ -350,34 +594,40 @@ function renderLibrary() {
   $$("[data-delete]").forEach(button => button.addEventListener("click", () => confirmDelete(button.dataset.delete)));
 }
 
-function confirmDelete(id) {
-  const asset = state.assetMap.get(id);
-  $("#confirm-message").textContent = `删除“${asset.name}”及其本地图片文件？如有处理副本，需先删除副本。`;
+function confirmAction(message, handler) {
+  $("#confirm-message").textContent = message;
   $("#confirm-dialog").showModal();
   $("#confirm-action").onclick = async () => {
     $("#confirm-action").disabled = true;
     try {
-      await api(`/assets/${id}`, { method: "DELETE" });
-      state.assetMap.delete(id);
-      state.selected.delete(id);
-      if (state.current?.id === id) {
-        state.current = null;
-        state.root = null;
-        state.selectionToken += 1;
-        $("#image-stage").hidden = true;
-        $("#empty-state").hidden = false;
-        $("#active-name").textContent = "尚未选择图片";
-        $("#image-meta").textContent = "等待导入图片";
-        setComparison(false);
-      }
+      await handler();
       $("#confirm-dialog").close();
-      await refreshLibrary();
-      await refreshStats();
-      renderFilmstrip();
-      toast("素材已删除");
     } catch (error) { toast(error.message, "error"); }
     finally { $("#confirm-action").disabled = false; }
   };
+}
+
+function confirmDelete(id) {
+  const asset = state.assetMap.get(id);
+  confirmAction(`删除“${asset.name}”及其本地图片文件？如有处理副本，需先删除副本。`, async () => {
+    await api(`/assets/${id}`, { method: "DELETE" });
+    state.assetMap.delete(id);
+    state.selected.delete(id);
+    if (state.current?.id === id) {
+      state.current = null;
+      state.root = null;
+      state.selectionToken += 1;
+      $("#image-stage").hidden = true;
+      $("#empty-state").hidden = false;
+      $("#active-name").textContent = "尚未选择图片";
+      $("#image-meta").textContent = "等待导入图片";
+      setComparison(false);
+    }
+    await refreshLibrary();
+    await refreshStats();
+    renderFilmstrip();
+    toast("素材已删除");
+  });
 }
 
 function renderPipeline() {
@@ -549,8 +799,23 @@ function bindEvents() {
   $$(".close-dialog").forEach(button => button.addEventListener("click", () => button.closest("dialog").close()));
   ["#top-upload", "#empty-upload", "#library-upload"].forEach(selector => on(selector, "click", () => $("#file-input").click()));
   on("#file-input", "change", event => importFiles([...event.target.files]));
-  on("#operation-select", "change", () => { state.operation = $("#operation-select").value; renderParameters(); });
+  on("#operation-select", "change", () => {
+    state.operation = $("#operation-select").value;
+    clearPreview(false);
+    $("#coverage-overlay").hidden = true;
+    renderParameters();
+  });
   on("#parameter-form", "submit", event => event.preventDefault());
+  $("#parameter-form").addEventListener("input", () => {
+    if (state.operation !== "mask_local_adjust") return;
+    scheduleMaskPreview();
+    scheduleCoverage();
+  });
+  $("#mask-adjust-tools").addEventListener("input", () => scheduleMaskPreview());
+  on("#mask-file-input", "change", async event => {
+    await uploadMask(event.target.files[0]);
+    $("#mask-file-input").value = "";
+  });
   on("#reset-params", "click", () => { renderParameters(); toast("参数已重置", "info"); });
   on("#apply-button", "click", () => processSteps([readStep()]));
   on("#run-pipeline", "click", () => processSteps(state.pipeline));
@@ -646,8 +911,8 @@ function bindEvents() {
 
 async function bootstrap() {
   hydrateIcons();
-  const [catalog, config, library, presets] = await Promise.all([api("/catalog"), api("/config"), api("/assets?limit=60"), api("/presets")]);
-  Object.assign(state, { catalog, config, presets, assets: library.items, assetTotal: library.total });
+  const [catalog, config, library, presets, masks] = await Promise.all([api("/catalog"), api("/config"), api("/assets?limit=60"), api("/presets"), api("/masks")]);
+  Object.assign(state, { catalog, config, presets, masks, assets: library.items, assetTotal: library.total });
   rememberAssets(library.items);
   bindEvents();
   chooseCategory("color", "color_levels");

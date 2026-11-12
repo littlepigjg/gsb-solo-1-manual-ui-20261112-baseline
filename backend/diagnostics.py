@@ -68,6 +68,25 @@ class DiagnosticsService:
         orphans = sorted(disk_files - tracked_files)
         for filename in orphans:
             issues.append({"code": "untracked_media", "filename": filename})
+        tracked_masks = set()
+        missing_masks = []
+        expected_mask_files = set()
+        for mask in records["masks"]:
+            if mask.get("kind") == "builtin":
+                expected_mask_files.add(mask["id"] + ".thumb.png")
+                continue
+            for suffix in (".png", ".thumb.png"):
+                filename = mask["id"] + suffix
+                tracked_masks.add(filename)
+                expected_mask_files.add(filename)
+                if not (self.settings.masks / filename).is_file():
+                    missing_masks.append(filename)
+        for filename in missing_masks:
+            issues.append({"code": "missing_mask", "filename": filename})
+        disk_masks = {path.name for path in self.settings.masks.glob("*.png")}
+        orphan_masks = sorted(disk_masks - expected_mask_files)
+        for filename in orphan_masks:
+            issues.append({"code": "untracked_mask", "filename": filename})
         for record in records["exports"]:
             if not (self.settings.exports / record["filename"]).is_file():
                 issues.append({"code": "missing_export", "export_id": record["id"]})
@@ -89,6 +108,10 @@ class DiagnosticsService:
             "tracked_media_count": len(tracked_files),
             "missing_media_count": len(missing_files),
             "orphan_media_count": len(orphans),
+            "mask_file_count": len(disk_masks),
+            "tracked_mask_count": len(tracked_masks),
+            "missing_mask_count": len(missing_masks),
+            "orphan_mask_count": len(orphan_masks),
             "disk_total_bytes": usage.total,
             "disk_free_bytes": usage.free,
             "active_jobs": active_jobs,

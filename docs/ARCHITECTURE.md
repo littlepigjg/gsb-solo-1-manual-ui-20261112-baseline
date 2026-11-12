@@ -9,6 +9,7 @@ HTML / CSS / JavaScript
 Flask 路由与错误边界
         │
         ├── AssetService ── 图片校验 / EXIF 归一化 / PNG 与缩略图
+        ├── MaskService ─── 内置与导入蒙版 / 覆盖率计算
         ├── Registry ────── 参数协议 / 严格校验 / 算法注册
         ├── Processing ──── 有序执行 / 资源限制 / 新副本和溯源
         ├── JobService ──── 单工作线程 / 进度 / 取消 / 重启恢复
@@ -53,6 +54,7 @@ Flask 路由与错误边界
 | 集合 | 主要字段 |
 | --- | --- |
 | assets | name、kind、width、height、sha256、parent_id、root_id、steps、metadata |
+| masks | name、kind、builtin_key、adaptive、width、height、has_alpha |
 | jobs | title、asset_ids、steps、status、progress、results、errors |
 | presets | name、description、steps、readonly、builtin_key |
 | events | action、message、details |
@@ -60,7 +62,11 @@ Flask 路由与错误边界
 
 锁覆盖 JSON 读改写全过程，写入采用新临时文件、flush/fsync、备份旧文件、`os.replace`。读到损坏 JSON 时尝试恢复上一个有效备份；无有效备份时明确失败，不静默重置数据。
 
-图片文件与 JSON 不是一个跨文件事务。服务写入失败会清理新建图片，但突然断电仍可能遗留孤立文件，诊断接口会列出。完整备份需要同时保存 `data/json`、`data/media`、`data/exports`。
+图片文件与 JSON 不是一个跨文件事务。服务写入失败会清理新建图片，但突然断电仍可能遗留孤立文件，诊断接口会列出。完整备份需要同时保存 `data/json`、`data/media`、`data/masks`、`data/exports`。
+
+## 蒙版局部调整
+
+蒙版是独立的一等素材：四个内置程序化渐变蒙版（径向、线性、圆形、暗角框）按目标尺寸即时渲染，导入的蒙版保存为 PNG 并要求与当前图片尺寸完全一致。`mask_local_adjust` 的 `adjustment` 参数是嵌套处理步骤，注册表递归校验并限制为色彩调整白名单；执行时先计算覆盖率（明暗或透明度通道、可选反转与高斯柔化），再按 `覆盖率 × 强度` 混合嵌套调整结果。任何参数、蒙版存在性或尺寸校验失败都发生在保存之前，因此不会留下半成品副本；未覆盖像素与原始 Alpha 通道逐像素保留。
 
 ## 任务与资源控制
 
@@ -70,7 +76,7 @@ Flask 路由与错误边界
 
 ## 验证方式
 
-1. 逐项执行全部 86 种操作，检查输出图像、模式、尺寸与透明通道。
+1. 逐项执行全部 87 种操作，检查输出图像、模式、尺寸与透明通道。
 2. 用明确像素关系检查裁剪、旋转、反相、Gamma 和颜色抠除。
 3. HTTP 测试验证真实编码文件能够重新解码，检查 PNG/JPEG/WebP/BMP/TIFF/GIF。
 4. 测试多步流程、原图不变、历史、ZIP、预设、批次完成/失败/取消。

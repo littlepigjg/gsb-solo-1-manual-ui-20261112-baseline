@@ -48,7 +48,8 @@ def main():
     }
     target = ROOT / "docs" / "backend-line-count.json"
     target.parent.mkdir(exist_ok=True)
-    target.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    target.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+                      encoding="utf-8", newline="\r\n")
     print(json.dumps({key: value for key, value in report.items() if key != "modules"}, indent=2))
     if report["code_lines_excluding_docstrings"] <= 5000:
         raise SystemExit("Backend must contain more than 5000 nonblank code lines.")

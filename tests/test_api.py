@@ -10,8 +10,8 @@ from backend.app import create_app
 def test_home_and_health(client):
     assert client.get("/").status_code == 200
     health = client.get("/api/health").json["data"]
-    assert health["features"] == 10
-    assert health["operations"] == 86
+    assert health["features"] == 11
+    assert health["operations"] == 87
     assert client.get("/static/app.js").status_code == 200
 
 
@@ -204,9 +204,13 @@ def test_invalid_api_requests(client, request_payload):
 def test_backup_and_diagnostics(client, uploaded):
     backup = json.loads(client.get("/api/backup").data)
     assert uploaded["id"] in backup["collections"]["assets"]["records"]
+    assert "masks" in backup["collections"]
     diagnostics = client.get("/api/diagnostics").json["data"]
     assert diagnostics["healthy"] is True
     assert diagnostics["media_file_count"] == 2
+    assert diagnostics["mask_file_count"] >= 4
+    assert diagnostics["missing_mask_count"] == 0
+    assert diagnostics["orphan_mask_count"] == 0
 
 
 def test_sample_creation_idempotent(client):

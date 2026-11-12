@@ -23,8 +23,8 @@
         <button class="nav-item" data-view="library"><span data-icon="image"></span>我的素材库<span id="library-count" class="count">0</span></button>
         <button class="nav-item" data-view="jobs"><span data-icon="grid"></span>批量任务<span id="job-count" class="count">0</span></button>
       </nav>
-      <div class="sidebar-section-title tool-label">图像工具 <span>10 TOOLS</span></div>
-      <nav id="tool-nav" class="tool-nav" aria-label="十项图像功能"></nav>
+      <div class="sidebar-section-title tool-label">图像工具 <span>11 TOOLS</span></div>
+      <nav id="tool-nav" class="tool-nav" aria-label="十一项图像功能"></nav>
       <div class="sidebar-bottom">
         <div class="local-card"><span class="status-dot"></span><div><strong>在本地，自由创作</strong><p>图片与处理记录保存在本机</p></div></div>
         <button id="system-button" class="system-button"><span data-icon="settings"></span> 系统与数据 <span>v1.0</span></button>
@@ -45,7 +45,8 @@
             <div id="canvas-area" class="canvas-area">
               <div class="canvas-corner tl"></div><div class="canvas-corner tr"></div><div class="canvas-corner bl"></div><div class="canvas-corner br"></div>
               <div id="empty-state" class="empty-state"><div class="empty-icon" data-icon="image"></div><h2>你的下一幅作品，从这里开始</h2><p>拖入图片，或选择本地文件</p><button id="empty-upload" class="button dark">选择图片</button><small>PNG / JPG / WebP / BMP / TIFF / GIF · 最大 24 MB</small></div>
-              <div id="image-stage" class="image-stage" hidden><img id="preview-image" alt="当前图像处理结果"><div id="original-layer" class="original-layer" hidden><img id="original-image" alt="最初导入的原图"></div><div id="comparison-line" class="comparison-line" hidden><span>↔</span></div><div id="comparison-labels" class="comparison-labels" hidden><span>原图</span><span>当前结果</span></div></div>
+              <div id="image-stage" class="image-stage" hidden><img id="preview-image" alt="当前图像处理结果"><div id="original-layer" class="original-layer" hidden><img id="original-image" alt="最初导入的原图"></div><img id="coverage-overlay" class="coverage-overlay" alt="蒙版覆盖范围" hidden><div id="comparison-line" class="comparison-line" hidden><span>↔</span></div><div id="comparison-labels" class="comparison-labels" hidden><span>原图</span><span>当前结果</span></div></div>
+              <div id="preview-badge" class="preview-badge" hidden><span data-icon="spark"></span>预览效果 · 尚未保存</div>
               <div id="canvas-busy" class="canvas-busy" hidden><span class="spinner"></span><strong>正在处理画面</strong><small>完成后将保留一个新的处理副本</small></div>
             </div>
             <div id="comparison-control" class="comparison-control" hidden><label for="comparison-range">原图</label><input id="comparison-range" type="range" min="0" max="100" value="50" aria-label="原图对比位置"><span>处理结果</span></div>
@@ -60,7 +61,9 @@
               <div class="tool-heading"><div id="tool-symbol" class="tool-symbol"></div><div><h2 id="category-title">色彩调整</h2><p id="category-subtitle">让色彩恰到好处</p></div><span id="category-number">04</span></div>
               <label class="field-label" for="operation-select">处理方式</label><select id="operation-select"></select>
               <p id="operation-description" class="operation-description"></p>
+              <div id="mask-tools" class="mask-tools" hidden></div>
               <form id="parameter-form" class="parameter-form"></form>
+              <div id="mask-adjust-tools" class="mask-adjust-tools" hidden></div>
               <div class="parameter-actions"><button id="reset-params" class="text-button"><span data-icon="reset"></span>重置参数</button><button id="add-step" class="text-button"><span data-icon="plus"></span>加入流程</button></div>
               <div class="action-note"><span data-icon="layers"></span><span>每次处理都生成新副本，随时回到原图。</span></div>
               <button id="apply-button" class="button dark wide"><span data-icon="spark"></span>应用到当前图片<span class="button-arrow">↗</span></button>
@@ -77,7 +80,7 @@
             <div class="inspector-export"><div><strong>完成这一次创作</strong><p>选择格式，将作品带走</p></div><button id="export-button" class="button outline"><span data-icon="download"></span>导出</button></div>
           </aside>
         </div>
-        <div class="workspace-footnote"><span>光屿 / 为日常影像留一点创作空间</span><span>10 项功能 · <span id="operation-total">86</span> 种处理方式 · 本地运行</span></div>
+        <div class="workspace-footnote"><span>光屿 / 为日常影像留一点创作空间</span><span>11 项功能 · <span id="operation-total">87</span> 种处理方式 · 本地运行</span></div>
       </section>
 
       <section id="library-view" class="view">
@@ -94,6 +97,7 @@
   </div>
 
   <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff,image/gif" multiple hidden>
+  <input id="mask-file-input" type="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff,image/gif" hidden>
   <div id="drop-overlay" class="drop-overlay" hidden><span data-icon="upload"></span><h2>松开鼠标，导入你的画面</h2><p>文件仅保存在本机</p></div>
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 

@@ -9,6 +9,8 @@ from .validation import object_value, reject_unknown, validate_parameters, list_
 class OperationContext:
     settings: object
     assets: object = None
+    masks: object = None
+    registry: object = None
 
 
 class Registry:
@@ -44,6 +46,16 @@ class Registry:
         reject_unknown(step, {"operation", "params"}, "处理步骤")
         spec = self.spec(step.get("operation"))
         params = validate_parameters(spec, step.get("params", {}))
+        for field in spec["parameters"]:
+            if field["type"] == "step":
+                nested = params[field["name"]]
+                allowed = field.get("operations")
+                if allowed is not None and nested["operation"] not in allowed:
+                    raise StudioError(
+                        f"{field['label']}不支持该操作",
+                        details={"operation": nested["operation"], "allowed": allowed},
+                    )
+                params[field["name"]] = self.validate_step(nested)
         return {"operation": spec["id"], "params": params}
 
     def validate_pipeline(self, steps, maximum=12):

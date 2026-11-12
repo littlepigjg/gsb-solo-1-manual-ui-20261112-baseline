@@ -6,9 +6,13 @@ directly. This compiler is a maintenance tool, never run during app startup.
 from pathlib import Path
 import os
 import pprint
+import sys
 
 
 ROOT = Path(os.path.relpath(Path(__file__).parents[1]))
+sys.path.insert(0, str(ROOT))
+from backend.masks import MAX_FEATHER, builtin_id  # noqa: E402
+
 OPERATIONS = []
 CATEGORIES = [
     {"id": "crop", "title": "裁剪构图", "icon": "crop", "subtitle": "留下画面的重点", "number": "01"},
@@ -20,7 +24,8 @@ CATEGORIES = [
     {"id": "edge", "title": "边缘检测", "icon": "layers", "subtitle": "探索图像的轮廓", "number": "07"},
     {"id": "watermark", "title": "水印标注", "icon": "type", "subtitle": "为作品留下署名", "number": "08"},
     {"id": "format", "title": "格式转换", "icon": "file", "subtitle": "轻松分享与交付", "number": "09"},
-    {"id": "batch", "title": "批量处理", "icon": "grid", "subtitle": "一次完成一组作品", "number": "10"},
+    {"id": "mask", "title": "蒙版局部", "icon": "mask", "subtitle": "只调整选中的区域", "number": "10"},
+    {"id": "batch", "title": "批量处理", "icon": "grid", "subtitle": "一次完成一组作品", "number": "11"},
 ]
 
 
@@ -42,7 +47,7 @@ def number(name, label, default, minimum, maximum, step=1, help="", unit="", gro
     return field
 
 
-def choice(name, label, default, options, help=""):
+def choice(name, label, default, options, help="", group="基础参数"):
     return {
         "name": name,
         "label": label,
@@ -50,13 +55,23 @@ def choice(name, label, default, options, help=""):
         "default": default,
         "options": [{"value": value, "label": title} for value, title in options],
         "help": help or f"选择{label}。",
-        "group": "基础参数",
+        "group": group,
     }
 
 
-def boolean(name, label, default, help):
+def boolean(name, label, default, help, group="处理选项"):
     return {"name": name, "label": label, "type": "boolean", "default": default,
-            "help": help, "group": "处理选项"}
+            "help": help, "group": group}
+
+
+def identifier(name, label, default, help, group="蒙版"):
+    return {"name": name, "label": label, "type": "identifier", "default": default,
+            "help": help, "group": group}
+
+
+def step(name, label, default, operations, help, group="调整"):
+    return {"name": name, "label": label, "type": "step", "default": default,
+            "operations": operations, "help": help, "group": group}
 
 
 def color(name, label, default, help=""):
@@ -293,6 +308,21 @@ op("format_opacity", "整体透明度", "format", "formatting", "缩放透明通
 op("format_color_key", "纯色背景抠除", "format", "formatting", "按与指定颜色的距离生成透明遮罩，适合绿幕和纯色背景。", "RGB distance color key with feather", [
     color("color", "抠除颜色", "#00ff00"), number("tolerance", "颜色容差", 35, 0, 200), number("softness", "边缘过渡", 20, 1, 100)], True, False)
 
+COLOR_ADJUSTMENTS = [f"color_{key}" for key in [
+    "brightness", "contrast", "saturation", "exposure", "gamma", "temperature", "hue", "balance",
+    "levels", "shadows", "grayscale", "invert", "autocontrast", "equalize", "duotone", "threshold",
+    "vibrance", "channel_mixer",
+]]
+op("mask_local_adjust", "蒙版局部调整", "mask", "mask", "用蒙版控制调整范围，只改变选中区域，其余部分保持原样。", "Mask coverage weighted composite of a nested color adjustment", [
+    identifier("mask_id", "蒙版", builtin_id("radial"), "选择用于控制范围的蒙版，可在页面中导入。"),
+    choice("mode", "覆盖依据", "luminance", [("luminance", "明暗（亮部覆盖）"), ("alpha", "透明度（不透明覆盖）")],
+           "用蒙版的明暗或透明度决定覆盖范围。", group="蒙版"),
+    boolean("invert", "反转蒙版", False, "交换覆盖与未覆盖区域。", group="蒙版"),
+    number("feather", "柔化边缘", 24, 0, MAX_FEATHER, unit="px", group="蒙版"),
+    number("strength", "调整强度", 1.0, 0, 1, 0.05, "0 为原图，1 为完整效果。", group="调整"),
+    step("adjustment", "调整操作", {"operation": "color_brightness", "params": {"factor": 1.3}},
+         COLOR_ADJUSTMENTS, "对覆盖区域应用的色彩调整。")])
+
 
 def main():
     destination = ROOT / "backend" / "catalog"
@@ -306,13 +336,13 @@ def main():
         modules.append(module_name)
         source = '"""' + category["title"] + '：服务端参数协议与界面元数据。"""\n\n'
         source += "OPERATIONS = " + pprint.pformat(records, width=92, sort_dicts=False) + "\n"
-        (destination / f"{module_name}.py").write_text(source, encoding="utf-8")
-    index = '"""The authoritative ten-feature catalog."""\n'
+        (destination / f"{module_name}.py").write_text(source, encoding="utf-8", newline="\r\n")
+    index = '"""The authoritative eleven-feature catalog."""\n'
     for name in modules:
         index += f"from .{name} import OPERATIONS as {name.upper()}\n"
     index += "\nCATEGORIES = " + pprint.pformat(CATEGORIES, width=92, sort_dicts=False)
     index += "\n\nOPERATIONS = " + " + ".join(name.upper() for name in modules) + "\n"
-    (destination / "__init__.py").write_text(index, encoding="utf-8")
+    (destination / "__init__.py").write_text(index, encoding="utf-8", newline="\r\n")
     print(f"Compiled {len(OPERATIONS)} operations across {len(CATEGORIES)} features.")
 
 

@@ -3,8 +3,10 @@ import pytest
 from PIL import Image
 from backend.catalog import OPERATIONS
 from backend.errors import StudioError
+from backend.masks import MaskService
 from backend.registry import Registry, OperationContext
 from backend.settings import Settings
+from backend.storage import JsonStore
 
 
 @pytest.fixture(scope="module")
@@ -12,16 +14,24 @@ def registry():
     return Registry()
 
 
+def make_context(tmp_path, registry=None):
+    settings = Settings(root=tmp_path)
+    settings.prepare()
+    store = JsonStore(settings.database)
+    masks = MaskService(settings, store, None)
+    return OperationContext(settings=settings, masks=masks, registry=registry)
+
+
 @pytest.mark.parametrize("spec", OPERATIONS, ids=[spec["id"] for spec in OPERATIONS])
 def test_every_operation_runs(spec, registry, sample_image, tmp_path):
-    context = OperationContext(Settings(root=tmp_path))
+    context = make_context(tmp_path, registry)
     output = registry.apply(sample_image, {"operation": spec["id"], "params": {}}, context)
     assert isinstance(output, Image.Image)
     assert output.mode == "RGBA"
     assert output.width > 0 and output.height > 0
     if spec["preserves_dimensions"]:
         assert output.size == sample_image.size
-    if spec["category"] in {"color", "enhance", "edge"}:
+    if spec["category"] in {"color", "enhance", "edge", "mask"}:
         assert np.array_equal(np.asarray(output.getchannel("A")), np.asarray(sample_image.getchannel("A")))
 
 

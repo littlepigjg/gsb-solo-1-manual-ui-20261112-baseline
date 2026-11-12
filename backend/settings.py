@@ -27,6 +27,10 @@ class Settings:
         return self.root / "media"
 
     @property
+    def masks(self):
+        return self.root / "masks"
+
+    @property
     def exports(self):
         return self.root / "exports"
 
@@ -35,7 +39,7 @@ class Settings:
         return self.root / "json"
 
     def prepare(self):
-        for directory in (self.root, self.media, self.exports, self.database):
+        for directory in (self.root, self.media, self.masks, self.exports, self.database):
             directory.mkdir(parents=True, exist_ok=True)
 
     def public(self):

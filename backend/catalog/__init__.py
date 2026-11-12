@@ -1,4 +1,4 @@
-"""The authoritative ten-feature catalog."""
+"""The authoritative eleven-feature catalog."""
 from .crop import OPERATIONS as CROP
 from .resize import OPERATIONS as RESIZE
 from .transform import OPERATIONS as TRANSFORM
@@ -8,6 +8,7 @@ from .enhance import OPERATIONS as ENHANCE
 from .edge import OPERATIONS as EDGE
 from .watermark import OPERATIONS as WATERMARK
 from .format import OPERATIONS as FORMAT
+from .mask import OPERATIONS as MASK
 
 CATEGORIES = [{'id': 'crop', 'title': '裁剪构图', 'icon': 'crop', 'subtitle': '留下画面的重点', 'number': '01'},
  {'id': 'resize', 'title': '尺寸调整', 'icon': 'resize', 'subtitle': '适配每一种画幅', 'number': '02'},
@@ -26,6 +27,7 @@ CATEGORIES = [{'id': 'crop', 'title': '裁剪构图', 'icon': 'crop', 'subtitle'
   'subtitle': '为作品留下署名',
   'number': '08'},
  {'id': 'format', 'title': '格式转换', 'icon': 'file', 'subtitle': '轻松分享与交付', 'number': '09'},
- {'id': 'batch', 'title': '批量处理', 'icon': 'grid', 'subtitle': '一次完成一组作品', 'number': '10'}]
+ {'id': 'mask', 'title': '蒙版局部', 'icon': 'mask', 'subtitle': '只调整选中的区域', 'number': '10'},
+ {'id': 'batch', 'title': '批量处理', 'icon': 'grid', 'subtitle': '一次完成一组作品', 'number': '11'}]
 
-OPERATIONS = CROP + RESIZE + TRANSFORM + COLOR + FILTER + ENHANCE + EDGE + WATERMARK + FORMAT
+OPERATIONS = CROP + RESIZE + TRANSFORM + COLOR + FILTER + ENHANCE + EDGE + WATERMARK + FORMAT + MASK

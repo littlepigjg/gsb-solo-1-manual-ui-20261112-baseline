@@ -78,6 +78,17 @@ def choice_value(value, choices, label):
     return value
 
 
+def step_value(value, label="处理步骤"):
+    object_value(value, label)
+    reject_unknown(value, {"operation", "params"}, label)
+    operation = value.get("operation")
+    if not isinstance(operation, str) or not operation.strip():
+        raise StudioError(f"{label}缺少有效的操作名称")
+    params = value.get("params", {})
+    object_value(params, f"{label}参数")
+    return {"operation": operation, "params": params}
+
+
 def dimension_guard(width, height, settings):
     if min(width, height) < 1:
         raise StudioError("图片的宽度和高度必须大于零")
@@ -107,6 +118,10 @@ def validate_parameter(spec, value):
         return color_value(value, label)
     if kind == "select":
         return choice_value(value, [item["value"] for item in spec["options"]], label)
+    if kind == "identifier":
+        return identifier(value, label)
+    if kind == "step":
+        return step_value(value, label)
     if kind == "text":
         return text_value(value, label, spec.get("max_length", 120))
     raise RuntimeError(f"Unknown parameter kind: {kind}")

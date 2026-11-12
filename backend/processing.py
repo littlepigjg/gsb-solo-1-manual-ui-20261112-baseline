@@ -7,13 +7,14 @@ from .validation import text_value
 
 
 class ProcessingService:
-    def __init__(self, settings, store, assets, registry):
+    def __init__(self, settings, store, assets, registry, masks=None):
         self.settings = settings
         self.store = store
         self.assets = assets
         self.registry = registry
+        self.masks = masks
         self.compute_lock = threading.Lock()
-        self.context = OperationContext(settings=settings, assets=assets)
+        self.context = OperationContext(settings=settings, assets=assets, masks=masks, registry=registry)
 
     def validate(self, steps):
         return self.registry.validate_pipeline(steps, maximum=self.settings.max_steps)
