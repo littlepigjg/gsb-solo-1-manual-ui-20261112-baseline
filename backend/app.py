@@ -13,6 +13,7 @@ from .processing import ProcessingService
 from .jobs import JobService
 from .exports import ExportService
 from .analysis import AnalysisService
+from .diffing import DiffService
 from .presets import PresetService
 from .samples import SampleService
 from .diagnostics import DiagnosticsService
@@ -39,6 +40,7 @@ def create_app(data_dir=None, testing=False):
         "exports": exports,
         "presets": presets,
         "analysis": AnalysisService(assets),
+        "diff": DiffService(settings, store, assets),
         "samples": SampleService(assets, store),
         "diagnostics": DiagnosticsService(settings, store),
     }

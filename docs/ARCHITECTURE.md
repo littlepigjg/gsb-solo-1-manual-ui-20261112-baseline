@@ -14,6 +14,7 @@ Flask 路由与错误边界
         ├── JobService ──── 单工作线程 / 进度 / 取消 / 重启恢复
         ├── ExportService ─ 实际格式编码 / ZIP 打包
         ├── Analysis ────── 采样直方图 / 色谱 / 误差分析
+        ├── DiffService ─── 双图对齐差异 / 预乘 Alpha 比较 / 变化掩码与可视化
         ├── Presets ─────── 内置与自定义 JSON 流程
         └── Diagnostics ── 依赖与文件完整性检查
                      │

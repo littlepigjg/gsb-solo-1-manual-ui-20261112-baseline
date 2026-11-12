@@ -111,10 +111,11 @@ function setView(view) {
   state.view = view;
   $$(".view").forEach(element => element.classList.toggle("active", element.id === `${view}-view`));
   $$("[data-view]").forEach(button => button.classList.toggle("active", button.dataset.view === view));
-  const titles = { editor: "图像工作台", library: "我的素材库", jobs: "批量任务" };
+  const titles = { editor: "图像工作台", library: "我的素材库", jobs: "批量任务", diff: "图像对比" };
   $("#view-title").textContent = titles[view];
   if (view === "library") refreshLibrary().catch(error => toast(error.message, "error"));
   if (view === "jobs") { renderBatch(); refreshJobs().catch(error => toast(error.message, "error")); }
+  document.dispatchEvent(new CustomEvent("studio:viewchange", { detail: { view } }));
 }
 
 function setPanel(panel) {

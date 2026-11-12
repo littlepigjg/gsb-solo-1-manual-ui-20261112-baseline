@@ -21,6 +21,9 @@
 | GET | `/assets/{id}/history` | 从原图到当前结果的版本链 |
 | GET | `/assets/{id}/analysis` | 图像直方图、色谱及亮度分析 |
 | POST | `/compare` | 采样误差、PSNR 等比较指标 |
+| POST | `/diffs` | 对齐两张素材并生成差异图、改动范围、掩码与统计 |
+| GET | `/diffs/{id}/image/{view}` | 读取对比可视化 PNG（heatmap / overlay / mask） |
+| GET | `/diffs/{id}/download` | 下载对比结果 ZIP（三张 PNG + manifest.json） |
 | POST | `/process` | 执行流程并保存新副本 |
 | POST | `/preview` | 执行流程并返回临时 PNG，不写入素材库 |
 | POST | `/samples` | 幂等生成三个示例素材，body 为 `{}` |
@@ -89,6 +92,25 @@
 ```
 
 支持 `PNG/JPEG/WEBP/BMP/TIFF/GIF`。响应的 `url` 可直接下载。ZIP 接口将 `asset_id` 改为 `asset_ids` 数组，压缩包中包含安全命名的图片和 `manifest.json`。
+
+## 图像对比请求
+
+```json
+{
+  "first_id": "基准图片id",
+  "second_id": "对比图片id",
+  "alignment": "center",
+  "offset_x": 0,
+  "offset_y": 0,
+  "sensitivity": 80
+}
+```
+
+`alignment` 可选 `center`（中心对齐）、`first`（以第一张为基准）、`second`（以第二张为基准）；`offset_x/offset_y` 为 ±8192 内的整数像素偏移；`sensitivity` 为 1–100，越高越敏感（判定阈值 = 255 × (100 − 敏感度) / 100 色阶，默认敏感度 80 对应阈值 51）。
+
+比较按实际显示效果进行：RGB 先按 Alpha 预乘再计算四通道最大色阶距离，因此完全透明像素下隐藏的 RGB 不会产生假差异。两图并集画布之外不裁剪：仅一方覆盖的区域会计入“覆盖变化”，与重叠区的内容变化共用同一批变化像素，统计与两张可视化（heatmap 差异图、overlay 改动范围）由该掩码一次生成，口径一致。`mask` 视图将三类变化编码在 R/G/B 通道，便于程序化复核。
+
+响应包含 `stats`（像素计数、占比、最大/平均差异、改动范围 bbox）、`urls`（三种视图 PNG）与 `download_url`（ZIP：三张 PNG + manifest.json）。并集画布超过像素上限时自动等比缩小工作分辨率，`stats.full_resolution` 与 `work_scale` 会标明。对比记录最多保留 40 条，超出后最旧的记录与文件被清理。
 
 ## 状态码
 

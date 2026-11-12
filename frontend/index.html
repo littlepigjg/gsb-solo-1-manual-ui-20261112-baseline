@@ -9,6 +9,7 @@
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
+  <script src="/static/diff.js" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -22,6 +23,7 @@
         <button class="nav-item active" data-view="editor"><span data-icon="sliders"></span>图像工作台<span class="nav-dot"></span></button>
         <button class="nav-item" data-view="library"><span data-icon="image"></span>我的素材库<span id="library-count" class="count">0</span></button>
         <button class="nav-item" data-view="jobs"><span data-icon="grid"></span>批量任务<span id="job-count" class="count">0</span></button>
+        <button class="nav-item" data-view="diff"><span data-icon="compare"></span>图像对比<span class="nav-dot"></span></button>
       </nav>
       <div class="sidebar-section-title tool-label">图像工具 <span>10 TOOLS</span></div>
       <nav id="tool-nav" class="tool-nav" aria-label="十项图像功能"></nav>
@@ -84,6 +86,40 @@
         <div class="page-heading"><div><div class="eyebrow">YOUR VISUAL COLLECTION</div><h1>把灵感，收在这里<span>。</span></h1><p>原始素材与处理副本，始终清晰可寻。</p></div><button id="library-upload" class="button dark"><span data-icon="plus"></span>导入素材</button></div>
         <div class="library-toolbar"><div class="search-field"><span data-icon="search"></span><input id="asset-search" placeholder="搜索图片名称…" aria-label="搜索图片名称"></div><select id="asset-kind" aria-label="图片类型"><option value="all">全部图片</option><option value="original">导入原图</option><option value="result">处理副本</option><option value="sample">示例素材</option></select><button id="select-all" class="button subtle small">选择当前页</button><span id="selection-count">已选 0 张</span><button id="library-batch" class="button outline small">批量处理</button><button id="library-export" class="button dark small">打包导出</button></div>
         <div id="asset-grid" class="asset-grid"></div><button id="load-more" class="button outline load-more" hidden>加载更多</button>
+      </section>
+
+      <section id="diff-view" class="view">
+        <div class="page-heading"><div><div class="eyebrow">PIXEL-LEVEL REVIEW</div><h1>两版素材，一图看清<span>。</span></h1><p>按实际显示效果比较：完全透明处的隐藏颜色不会制造假差异，重叠区之外的覆盖变化同样计入统计。</p></div><button id="diff-run" class="button dark"><span data-icon="compare"></span>开始对比</button></div>
+        <div class="diff-toolbar">
+          <div class="diff-picker-field"><label class="field-label" for="diff-first">第一张 · 基准</label><select id="diff-first"></select></div>
+          <button id="diff-swap" class="icon-button" title="交换两张图片" aria-label="交换两张图片">⇄</button>
+          <div class="diff-picker-field"><label class="field-label" for="diff-second">第二张 · 对比</label><select id="diff-second"></select></div>
+          <button id="diff-use-selection" class="text-button">使用素材库勾选的两张</button>
+          <div class="diff-picker-field narrow"><label class="field-label" for="diff-alignment">对齐方式</label><select id="diff-alignment"><option value="center">中心对齐</option><option value="first">以第一张为基准</option><option value="second">以第二张为基准</option></select></div>
+          <div class="diff-picker-field tiny"><label class="field-label" for="diff-offset-x">水平偏移</label><input id="diff-offset-x" type="number" min="-8192" max="8192" step="1" value="0"></div>
+          <div class="diff-picker-field tiny"><label class="field-label" for="diff-offset-y">垂直偏移</label><input id="diff-offset-y" type="number" min="-8192" max="8192" step="1" value="0"></div>
+          <div class="diff-picker-field sensitivity"><label class="field-label" for="diff-sensitivity">敏感程度 <output id="diff-sensitivity-value">80</output></label><input id="diff-sensitivity" type="range" min="1" max="100" step="1" value="80"><small id="diff-threshold-hint" class="field-help"></small></div>
+        </div>
+        <div class="diff-layout">
+          <section class="diff-stage-panel" aria-label="差异预览">
+            <div class="diff-view-tabs" role="tablist"><button class="active" data-diff-view="heatmap" role="tab" aria-selected="true">差异图</button><button data-diff-view="overlay" role="tab" aria-selected="false">改动范围</button><span id="diff-canvas-note" class="diff-canvas-note"></span></div>
+            <div id="diff-stage" class="diff-stage">
+              <div id="diff-empty" class="empty-state"><div class="empty-icon" data-icon="compare"></div><h2>选择两张图片，开始对比</h2><p>差异图与改动范围将在同一批变化像素上生成</p></div>
+              <img id="diff-image" alt="两张图片的差异可视化" hidden>
+              <div id="diff-busy" class="canvas-busy" hidden><span class="spinner"></span><strong>正在计算差异</strong><small>透明区域按显示效果参与比较</small></div>
+            </div>
+            <div id="diff-legend" class="diff-legend"></div>
+          </section>
+          <aside class="diff-side">
+            <h2 class="panel-title">改动统计</h2>
+            <p class="panel-description">统计与左侧可视化由同一批变化像素生成，口径完全一致。</p>
+            <dl id="diff-stats" class="diff-stats"></dl>
+            <div id="diff-bbox" class="diff-bbox">尚未生成对比结果。</div>
+            <a id="diff-download-image" class="button outline wide" aria-disabled="true">下载当前视图 PNG</a>
+            <a id="diff-download-zip" class="button dark wide" aria-disabled="true"><span data-icon="download"></span>下载完整结果 ZIP</a>
+            <p class="muted">ZIP 内含差异图、改动范围、变化掩码与统计清单。透明区域按预乘 Alpha 的显示效果比较；仅一方覆盖的区域会计入“覆盖变化”。</p>
+          </aside>
+        </div>
       </section>
 
       <section id="jobs-view" class="view">

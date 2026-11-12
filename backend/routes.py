@@ -134,6 +134,23 @@ def compare():
     return ok(service("analysis").compare(data.get("first_id"), data.get("second_id")))
 
 
+@api.post("/diffs")
+def diff_create():
+    return ok(service("diff").create(payload()), 201)
+
+
+@api.get("/diffs/<diff_id>/image/<view>")
+def diff_image(diff_id, view):
+    path, record, mime = service("diff").file(diff_id, view)
+    return send_file(path, mimetype=mime, max_age=0)
+
+
+@api.get("/diffs/<diff_id>/download")
+def diff_download(diff_id):
+    path, record, mime = service("diff").file(diff_id)
+    return send_file(path, mimetype=mime, as_attachment=True, download_name=record["download_name"])
+
+
 @api.post("/process")
 def process():
     data = payload({"asset_id", "steps", "name"})
