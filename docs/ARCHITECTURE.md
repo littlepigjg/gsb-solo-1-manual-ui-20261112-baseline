@@ -13,6 +13,7 @@ Flask 路由与错误边界
         ├── Processing ──── 有序执行 / 资源限制 / 新副本和溯源
         ├── JobService ──── 单工作线程 / 进度 / 取消 / 重启恢复
         ├── ExportService ─ 实际格式编码 / ZIP 打包
+        ├── PaletteService ─ GIMP 调色板导入 / 图片取色 / 确定性套用 / 交换导出
         ├── Analysis ────── 采样直方图 / 色谱 / 误差分析
         ├── Presets ─────── 内置与自定义 JSON 流程
         └── Diagnostics ── 依赖与文件完整性检查
@@ -55,6 +56,7 @@ Flask 路由与错误边界
 | assets | name、kind、width、height、sha256、parent_id、root_id、steps、metadata |
 | jobs | title、asset_ids、steps、status、progress、results、errors |
 | presets | name、description、steps、readonly、builtin_key |
+| palettes | name、columns、colors、source、source_asset_id |
 | events | action、message、details |
 | exports | filename、download_name、asset_ids、options、kind、bytes |
 
@@ -76,3 +78,4 @@ Flask 路由与错误边界
 4. 测试多步流程、原图不变、历史、ZIP、预设、批次完成/失败/取消。
 5. 测试 JSON 并发写入、损坏恢复及重启后数据和任务状态。
 6. 浏览器实际执行编辑、原图对比、JPEG 导出与批量流程。
+7. 调色板：GIMP 导入与逐行损坏拒绝、取色与套用的确定性、透明通道保留、平局取色次序、四种导出格式与 .gpl 回读。

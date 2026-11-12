@@ -21,6 +21,7 @@
       <nav class="space-nav" aria-label="工作空间">
         <button class="nav-item active" data-view="editor"><span data-icon="sliders"></span>图像工作台<span class="nav-dot"></span></button>
         <button class="nav-item" data-view="library"><span data-icon="image"></span>我的素材库<span id="library-count" class="count">0</span></button>
+        <button class="nav-item" data-view="palettes"><span data-icon="palette"></span>配色方案<span id="palette-count" class="count">0</span></button>
         <button class="nav-item" data-view="jobs"><span data-icon="grid"></span>批量任务<span id="job-count" class="count">0</span></button>
       </nav>
       <div class="sidebar-section-title tool-label">图像工具 <span>10 TOOLS</span></div>
@@ -86,6 +87,21 @@
         <div id="asset-grid" class="asset-grid"></div><button id="load-more" class="button outline load-more" hidden>加载更多</button>
       </section>
 
+      <section id="palettes-view" class="view">
+        <div class="page-heading"><div><div class="eyebrow">ONE PALETTE. EVERY TOOL.</div><h1>一套配色，到处可用<span>。</span></h1><p>导入 GIMP 调色板或从图片提取颜色，调整次序后套用到素材，或导出给其他设计工具。</p></div><button id="palette-import" class="button dark"><span data-icon="upload"></span>导入 GIMP 调色板</button></div>
+        <div class="palette-layout">
+          <section class="palette-list-panel" aria-label="调色板列表">
+            <div class="section-number">01 / 选择调色板</div>
+            <div id="palette-list" class="palette-list"></div>
+            <div class="palette-list-actions">
+              <button id="palette-extract" class="button outline small"><span data-icon="spark"></span>从当前图片提取配色</button>
+              <button id="palette-new" class="button subtle small"><span data-icon="plus"></span>新建空白调色板</button>
+            </div>
+          </section>
+          <section class="palette-detail-panel" id="palette-detail" aria-label="调色板详情"></section>
+        </div>
+      </section>
+
       <section id="jobs-view" class="view">
         <div class="page-heading"><div><div class="eyebrow">LESS REPETITION. MORE CREATION.</div><h1>一份流程，一组好作品<span>。</span></h1><p>把重复留给工具，把时间留给创作。</p></div><button id="refresh-jobs" class="button subtle"><span data-icon="reset"></span>刷新任务</button></div>
         <div class="batch-layout"><section class="batch-compose"><div class="section-number">01 / 选择图片</div><div class="batch-selection-head"><h2>待处理素材 <span id="batch-selected-count">0</span></h2><button id="batch-pick" class="text-button">从素材库选择 ↗</button></div><div id="batch-images" class="batch-images"></div><div class="section-number">02 / 选择流程</div><select id="batch-preset" aria-label="批量处理预设"><option value="">使用当前编辑流程</option></select><div id="batch-steps" class="batch-steps"></div><label class="field-label" for="job-title">任务名称</label><input id="job-title" value="我的批量创作" maxlength="100"><button id="submit-job" class="button dark wide"><span data-icon="play"></span>开始批量处理</button><p class="muted">每批最多 24 张图片、12 个步骤。任务在本机后台运行，关闭页面后继续处理；停止服务会中断任务。</p></section><section class="job-history"><div class="section-number">任务记录 / PROCESSING LOG</div><div id="jobs-list"></div></section></div>
@@ -94,12 +110,14 @@
   </div>
 
   <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff,image/gif" multiple hidden>
+  <input id="palette-file-input" type="file" accept=".gpl,text/plain" hidden>
   <div id="drop-overlay" class="drop-overlay" hidden><span data-icon="upload"></span><h2>松开鼠标，导入你的画面</h2><p>文件仅保存在本机</p></div>
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
   <dialog id="export-dialog"><form id="export-form"><div class="dialog-heading"><div><div class="eyebrow">READY TO SHARE</div><h2>把作品带走</h2></div><button type="button" class="icon-button close-dialog" aria-label="关闭">×</button></div><p id="export-target" class="muted"></p><div class="two-fields"><label>文件格式<select id="export-format"><option>PNG</option><option>JPEG</option><option>WEBP</option><option>BMP</option><option>TIFF</option><option>GIF</option></select></label><label>输出 DPI<input id="export-dpi" type="number" min="36" max="1200" value="96"></label></div><label class="export-quality">编码质量 <output id="quality-value">90</output><input id="export-quality" type="range" min="1" max="100" value="90"></label><div class="two-fields"><label>透明区域填充色<input id="export-background" type="color" value="#ffffff"></label><label class="checkbox-label"><input id="export-lossless" type="checkbox">WebP 无损模式</label></div><p class="muted">PNG / WebP / TIFF 可保留透明通道；JPEG / BMP / GIF 将透明区域合成到背景色。GIF 导出为静态单帧。</p><button id="confirm-export" class="button dark wide" type="submit"><span data-icon="download"></span>生成并下载</button></form></dialog>
   <dialog id="preset-dialog"><form id="preset-form"><div class="dialog-heading"><h2>保存这份创作流程</h2><button type="button" class="icon-button close-dialog" aria-label="关闭">×</button></div><label>预设名称<input id="preset-name" required maxlength="80" placeholder="例如：午后胶片"></label><label>简短说明<textarea id="preset-description" maxlength="300" rows="3" placeholder="记录这份流程适合的场景"></textarea></label><button class="button dark wide" type="submit">保存预设</button></form></dialog>
   <dialog id="system-dialog"><div class="dialog-heading"><h2>系统与数据</h2><button class="icon-button close-dialog" aria-label="关闭">×</button></div><div id="system-content"></div><a class="button outline wide" href="/api/backup" download>下载 JSON 元数据备份</a><p class="muted">元数据备份不包含图片文件。完整备份请复制项目的 data 文件夹。</p></dialog>
+  <dialog id="extract-dialog"><form id="extract-form"><div class="dialog-heading"><div><div class="eyebrow">COLORS FROM THE IMAGE</div><h2>从图片提取配色</h2></div><button type="button" class="icon-button close-dialog" aria-label="关闭">×</button></div><p id="extract-source" class="muted"></p><label>颜色数量<input id="extract-count" type="number" min="2" max="32" value="8" required></label><label>调色板名称<input id="extract-name" maxlength="180" placeholder="留空则按图片自动命名"></label><p class="muted">只统计不透明度 ≥ 50% 的像素；同一图片每次提取的结果完全一致。</p><button class="button dark wide" type="submit"><span data-icon="spark"></span>提取并保存调色板</button></form></dialog>
   <dialog id="confirm-dialog"><div class="dialog-heading"><h2 id="confirm-title">删除素材</h2><button class="icon-button close-dialog" aria-label="关闭">×</button></div><p id="confirm-message"></p><div class="dialog-actions"><button class="button subtle close-dialog">取消</button><button id="confirm-action" class="button danger">确认删除</button></div></dialog>
 </body>
 </html>

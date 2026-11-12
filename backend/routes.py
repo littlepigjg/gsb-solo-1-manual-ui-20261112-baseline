@@ -214,6 +214,59 @@ def export_download(export_id):
     return send_file(path, mimetype=mime, as_attachment=True, download_name=record["download_name"])
 
 
+@api.get("/palettes")
+def palette_list():
+    return ok(service("palettes").list())
+
+
+@api.post("/palettes")
+def palette_create():
+    return ok(service("palettes").create(payload()), 201)
+
+
+@api.post("/palettes/import")
+def palette_import():
+    from .palettes import MAX_GPL_BYTES
+    file = request.files.get("file")
+    if file is None:
+        raise StudioError("请选择 GIMP 调色板文件（.gpl）")
+    return ok(service("palettes").import_gpl(file.stream.read(MAX_GPL_BYTES + 1), file.filename), 201)
+
+
+@api.post("/palettes/extract")
+def palette_extract():
+    data = payload({"asset_id", "count", "name"})
+    return ok(service("palettes").extract(data.get("asset_id"), data.get("count", 8), data.get("name")), 201)
+
+
+@api.get("/palettes/<palette_id>")
+def palette_get(palette_id):
+    return ok(service("palettes").get(palette_id))
+
+
+@api.patch("/palettes/<palette_id>")
+def palette_update(palette_id):
+    return ok(service("palettes").update(palette_id, payload()))
+
+
+@api.delete("/palettes/<palette_id>")
+def palette_delete(palette_id):
+    service("palettes").delete(palette_id)
+    return ok({"deleted": palette_id})
+
+
+@api.post("/palettes/<palette_id>/apply")
+def palette_apply(palette_id):
+    data = payload({"asset_id"})
+    return ok(service("palettes").apply(palette_id, data.get("asset_id")), 201)
+
+
+@api.post("/palettes/<palette_id>/export")
+def palette_export(palette_id):
+    data = payload({"format"})
+    return ok(service("palettes").export(palette_id, data.get("format", "gpl")), 201)
+
+
 @api.get("/events")
 def event_list():
     events = service("store").all("events")

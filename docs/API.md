@@ -35,6 +35,15 @@
 | POST | `/exports` | 单图实际格式编码 |
 | POST | `/exports/archive` | 多图编码并生成 ZIP |
 | GET | `/exports/{id}/download` | 下载导出产物 |
+| GET | `/palettes` | 列出色板库中的调色板 |
+| POST | `/palettes` | 手动创建调色板 |
+| POST | `/palettes/import` | multipart 导入 GIMP 调色板（.gpl） |
+| POST | `/palettes/extract` | 从图片提取主要颜色生成调色板 |
+| GET | `/palettes/{id}` | 调色板详情 |
+| PATCH | `/palettes/{id}` | 改名、替换或重排颜色 |
+| DELETE | `/palettes/{id}` | 删除调色板 |
+| POST | `/palettes/{id}/apply` | 把调色板套用到图片，生成新副本 |
+| POST | `/palettes/{id}/export` | 导出 gpl/css/json/txt，返回下载记录 |
 | GET | `/events` | 最近 100 条操作记录 |
 | GET | `/backup` | 下载完整 JSON 元数据快照 |
 
@@ -89,6 +98,20 @@
 ```
 
 支持 `PNG/JPEG/WEBP/BMP/TIFF/GIF`。响应的 `url` 可直接下载。ZIP 接口将 `asset_id` 改为 `asset_ids` 数组，压缩包中包含安全命名的图片和 `manifest.json`。
+
+## 配色方案
+
+调色板记录：`{name, columns, colors: [{hex: "#rrggbb", name}], source, source_asset_id}`，`source` 为 `gpl`（导入）、`image`（图片提取）或 `manual`（手动创建）。每个调色板 1–256 种颜色，色板库最多 100 个。
+
+**导入**：`POST /palettes/import` 使用 multipart 的 `file` 字段，文件需为 UTF-8 的 GIMP 调色板（首行 `GIMP Palette`，支持 `Name:`、`Columns:`、`#` 注释与 `R G B[名称]` 颜色行）。缺少文件头、无法识别的行、非整数通道、超出 0–255 的颜色值、空调色板或超过 256 色都会返回 400 并指出具体行号；任何错误都会在写入前发现，不会留下半份调色板。
+
+**提取**：`POST /palettes/extract`，body 为 `{"asset_id": "...", "count": 8, "name": "可选"}`，`count` 取 2–32。算法为 5 位直方图上的确定性中位切分，只统计不透明度 ≥ 50% 的像素；同一图片每次提取的颜色与排序完全一致。
+
+**修改**：`PATCH /palettes/{id}` 接受 `name`、`colors`、`columns`。颜色次序即数组次序，重排、改名、增删颜色都通过整体替换 `colors` 完成；全部颜色校验通过后才会原子写入，任一颜色非法则原调色板保持不变。
+
+**套用**：`POST /palettes/{id}/apply`，body 为 `{"asset_id": "..."}`。每个像素替换为 sRGB 欧氏距离最近的调色板颜色，距离相同时取调色板中排列靠前的颜色——同一输入永远得到同一结果。透明通道逐像素保留，结果保存为新的处理副本，原图不变。
+
+**导出**：`POST /palettes/{id}/export`，body 为 `{"format": "gpl|css|json|txt"}`。生成实际文件并登记到导出记录，响应的 `url` 经 `/exports/{id}/download` 下载；.gpl 导出可被 GIMP / Inkscape / Krita 直接读取，也可重新导入本工作室。
 
 ## 状态码
 

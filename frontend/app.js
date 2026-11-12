@@ -8,6 +8,7 @@ const state = {
   assets: [], assetMap: new Map(), assetTotal: 0, selected: new Set(),
   pipeline: [], presets: [], jobs: [], busy: false, comparing: false,
   selectionToken: 0, libraryToken: 0, exportIds: [], jobPoll: null,
+  palettes: [], paletteId: null, paletteDraft: null, paletteDirty: false,
 };
 
 const paths = {
@@ -33,6 +34,7 @@ const paths = {
   play: '<path d="m8 4 12 8-12 8Z"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="m10 3-1 3-3 1-3 3 2 2-1 4 3 1 2 4 3-1 4 1 1-3 4-2-1-3 1-4-3-1-2-3Z"/>',
+  palette: '<path d="M12 3a9 9 0 1 0 0 18c1.6 0 2.2-1 1.7-2.1-.5-1.2.3-2.4 1.8-2.4h1.9c2 0 3.6-1.6 3.6-3.6C21 7.4 17 3 12 3Z"/><circle cx="7.6" cy="10.4" r="1.25"/><circle cx="12" cy="7.4" r="1.25"/><circle cx="16.4" cy="10.4" r="1.25"/>',
 };
 
 function icon(name) {
@@ -111,9 +113,10 @@ function setView(view) {
   state.view = view;
   $$(".view").forEach(element => element.classList.toggle("active", element.id === `${view}-view`));
   $$("[data-view]").forEach(button => button.classList.toggle("active", button.dataset.view === view));
-  const titles = { editor: "图像工作台", library: "我的素材库", jobs: "批量任务" };
+  const titles = { editor: "图像工作台", library: "我的素材库", palettes: "配色方案", jobs: "批量任务" };
   $("#view-title").textContent = titles[view];
   if (view === "library") refreshLibrary().catch(error => toast(error.message, "error"));
+  if (view === "palettes") refreshPalettes().catch(error => toast(error.message, "error"));
   if (view === "jobs") { renderBatch(); refreshJobs().catch(error => toast(error.message, "error")); }
 }
 
@@ -350,13 +353,27 @@ function renderLibrary() {
   $$("[data-delete]").forEach(button => button.addEventListener("click", () => confirmDelete(button.dataset.delete)));
 }
 
-function confirmDelete(id) {
-  const asset = state.assetMap.get(id);
-  $("#confirm-message").textContent = `删除“${asset.name}”及其本地图片文件？如有处理副本，需先删除副本。`;
+function confirmAction({ title, message, actionLabel = "确认删除", onConfirm }) {
+  $("#confirm-title").textContent = title;
+  $("#confirm-message").textContent = message;
+  $("#confirm-action").textContent = actionLabel;
   $("#confirm-dialog").showModal();
   $("#confirm-action").onclick = async () => {
     $("#confirm-action").disabled = true;
     try {
+      await onConfirm();
+      $("#confirm-dialog").close();
+    } catch (error) { toast(error.message, "error"); }
+    finally { $("#confirm-action").disabled = false; }
+  };
+}
+
+function confirmDelete(id) {
+  const asset = state.assetMap.get(id);
+  confirmAction({
+    title: "删除素材",
+    message: `删除“${asset.name}”及其本地图片文件？如有处理副本，需先删除副本。`,
+    onConfirm: async () => {
       await api(`/assets/${id}`, { method: "DELETE" });
       state.assetMap.delete(id);
       state.selected.delete(id);
@@ -370,14 +387,12 @@ function confirmDelete(id) {
         $("#image-meta").textContent = "等待导入图片";
         setComparison(false);
       }
-      $("#confirm-dialog").close();
       await refreshLibrary();
       await refreshStats();
       renderFilmstrip();
       toast("素材已删除");
-    } catch (error) { toast(error.message, "error"); }
-    finally { $("#confirm-action").disabled = false; }
-  };
+    },
+  });
 }
 
 function renderPipeline() {
@@ -488,6 +503,216 @@ function renderJobs() {
     const job = state.jobs.find(item => item.id === button.dataset.jobExport);
     openExport(job.results.map(result => result.asset_id));
   }));
+}
+
+const PALETTE_SOURCES = { gpl: "GIMP 导入", image: "图片提取", manual: "手动创建" };
+
+async function refreshPalettes(selectId = null) {
+  const previous = state.paletteId;
+  state.palettes = await api("/palettes");
+  if (selectId) state.paletteId = selectId;
+  if (!state.palettes.some(palette => palette.id === state.paletteId)) {
+    state.paletteId = state.palettes[0]?.id || null;
+  }
+  if (state.paletteId !== previous || !state.paletteDraft) loadPaletteDraft();
+  $("#palette-count").textContent = state.palettes.length;
+  renderPalettes();
+}
+
+function currentPalette() {
+  return state.palettes.find(palette => palette.id === state.paletteId) || null;
+}
+
+function loadPaletteDraft() {
+  const palette = currentPalette();
+  state.paletteDraft = palette ? structuredClone(palette) : null;
+  state.paletteDirty = false;
+}
+
+function selectPalette(id) {
+  if (id === state.paletteId) return;
+  if (state.paletteDirty && !confirm("当前调色板有未保存的修改，切换后将丢失，继续？")) return;
+  state.paletteId = id;
+  loadPaletteDraft();
+  renderPalettes();
+}
+
+function markPaletteDirty() {
+  state.paletteDirty = true;
+  const flag = $("#palette-dirty");
+  if (flag) flag.hidden = false;
+}
+
+function renderPalettes() {
+  $("#palette-list").innerHTML = state.palettes.length ? state.palettes.map(palette => `
+    <button class="palette-card ${palette.id === state.paletteId ? "active" : ""}" data-palette="${palette.id}">
+      <span class="palette-card-head"><span class="palette-card-title">${escapeHtml(palette.name)}</span><span class="palette-card-meta">${palette.colors.length} 色 · ${PALETTE_SOURCES[palette.source] || palette.source}</span></span>
+      <span class="palette-strip">${palette.colors.slice(0, 24).map(color => `<i style="background:${color.hex}"></i>`).join("")}</span>
+    </button>`).join("") : '<div class="empty-hint">还没有调色板。<br>导入 GIMP 调色板，或从当前图片提取配色。</div>';
+  $$("[data-palette]").forEach(button => button.addEventListener("click", () => selectPalette(button.dataset.palette)));
+  renderPaletteDetail();
+}
+
+function renderPaletteDetail() {
+  const panel = $("#palette-detail");
+  const draft = state.paletteDraft;
+  if (!draft) {
+    panel.innerHTML = '<div class="empty-hint">选择左侧调色板查看和编辑，<br>或新建、导入、从图片提取。</div>';
+    return;
+  }
+  const updated = new Date(draft.updated_at).toLocaleString("zh-CN", { hour12: false });
+  panel.innerHTML = `
+    <div class="section-number">02 / 查看与调整</div>
+    <div class="palette-detail-head">
+      <label>调色板名称<input id="palette-name" type="text" maxlength="180" value="${escapeHtml(draft.name)}"></label>
+      <span class="palette-source-tag">${PALETTE_SOURCES[draft.source] || draft.source}</span>
+    </div>
+    <p class="palette-meta">${draft.colors.length} 种颜色 · 更新于 ${updated}<span id="palette-dirty" class="palette-dirty" ${state.paletteDirty ? "" : "hidden"}>有未保存的修改</span></p>
+    <div class="palette-colors">
+      ${draft.colors.map((color, index) => `
+      <div class="palette-row">
+        <span class="step-number">${String(index + 1).padStart(2, "0")}</span>
+        <input type="color" value="${color.hex}" data-color-index="${index}" aria-label="第 ${index + 1} 种颜色">
+        <span class="palette-hex">${color.hex}</span>
+        <input type="text" value="${escapeHtml(color.name)}" maxlength="80" placeholder="颜色名称" data-name-index="${index}" aria-label="第 ${index + 1} 种颜色的名称">
+        <span class="palette-row-buttons">
+          <button data-color-up="${index}" ${index === 0 ? "disabled" : ""} title="上移" aria-label="上移">↑</button>
+          <button data-color-down="${index}" ${index === draft.colors.length - 1 ? "disabled" : ""} title="下移" aria-label="下移">↓</button>
+          <button data-color-remove="${index}" title="移除颜色" aria-label="移除颜色">×</button>
+        </span>
+      </div>`).join("")}
+    </div>
+    <button id="palette-add-color" class="button subtle small"><span data-icon="plus"></span>添加颜色</button>
+    <div class="palette-actions-row">
+      <button id="palette-save" class="button dark small">保存修改</button>
+      <button id="palette-revert" class="text-button">放弃修改</button>
+    </div>
+    <div class="palette-actions-row">
+      <button id="palette-apply" class="button outline small"><span data-icon="spark"></span>套用到当前图片</button>
+      <select id="palette-export-format" aria-label="导出格式">
+        <option value="gpl">GIMP 调色板 (.gpl)</option>
+        <option value="css">CSS 变量 (.css)</option>
+        <option value="json">JSON 数据 (.json)</option>
+        <option value="txt">色值清单 (.txt)</option>
+      </select>
+      <button id="palette-export" class="button outline small"><span data-icon="download"></span>导出配色</button>
+      <button id="palette-delete" class="text-button palette-delete">删除调色板</button>
+    </div>
+    <p class="muted">套用规则：每个像素替换为 sRGB 欧氏距离最近的调色板颜色，距离相同时取排列靠前的颜色；透明通道保持不变，结果保存为新副本，原图不变。</p>`;
+  hydrateIcons(panel);
+  $("#palette-name").addEventListener("input", event => { draft.name = event.target.value; markPaletteDirty(); });
+  $$("[data-color-index]", panel).forEach(input => input.addEventListener("change", () => {
+    draft.colors[Number(input.dataset.colorIndex)].hex = input.value;
+    markPaletteDirty();
+    renderPaletteDetail();
+  }));
+  $$("[data-name-index]", panel).forEach(input => input.addEventListener("input", () => {
+    draft.colors[Number(input.dataset.nameIndex)].name = input.value;
+    markPaletteDirty();
+  }));
+  $$("[data-color-up]", panel).forEach(button => button.addEventListener("click", () => {
+    const index = Number(button.dataset.colorUp);
+    [draft.colors[index - 1], draft.colors[index]] = [draft.colors[index], draft.colors[index - 1]];
+    markPaletteDirty();
+    renderPaletteDetail();
+  }));
+  $$("[data-color-down]", panel).forEach(button => button.addEventListener("click", () => {
+    const index = Number(button.dataset.colorDown);
+    [draft.colors[index], draft.colors[index + 1]] = [draft.colors[index + 1], draft.colors[index]];
+    markPaletteDirty();
+    renderPaletteDetail();
+  }));
+  $$("[data-color-remove]", panel).forEach(button => button.addEventListener("click", () => {
+    draft.colors.splice(Number(button.dataset.colorRemove), 1);
+    markPaletteDirty();
+    renderPaletteDetail();
+  }));
+  on("#palette-add-color", "click", () => {
+    if (draft.colors.length >= 256) throw new Error("每个调色板最多 256 种颜色。");
+    draft.colors.push({ hex: "#808080", name: "" });
+    markPaletteDirty();
+    renderPaletteDetail();
+  });
+  on("#palette-save", "click", savePalette);
+  on("#palette-revert", "click", () => { loadPaletteDraft(); renderPaletteDetail(); toast("已放弃未保存的修改", "info"); });
+  on("#palette-apply", "click", applyPalette);
+  on("#palette-export", "click", exportPalette);
+  on("#palette-delete", "click", deletePalette);
+}
+
+async function savePalette() {
+  const draft = state.paletteDraft;
+  if (!draft) return;
+  if (!draft.name.trim()) throw new Error("请填写调色板名称。");
+  if (!draft.colors.length) throw new Error("调色板至少需要 1 种颜色。");
+  const saved = await api(`/palettes/${draft.id}`, {
+    method: "PATCH",
+    body: { name: draft.name, colors: draft.colors.map(color => ({ hex: color.hex, name: color.name })) },
+  });
+  await refreshPalettes(saved.id);
+  loadPaletteDraft();
+  renderPalettes();
+  toast("调色板已保存");
+}
+
+async function applyPalette() {
+  const palette = currentPalette();
+  if (!palette) return;
+  if (state.paletteDirty) throw new Error("调色板有未保存的修改，请先保存或放弃。");
+  const asset = requireImage();
+  const result = await api(`/palettes/${palette.id}/apply`, { method: "POST", body: { asset_id: asset.id } });
+  state.assetMap.set(result.id, result);
+  await selectAsset(result.id, true);
+  await refreshStats();
+  toast(`已套用“${palette.name}”，结果保存为新副本`);
+}
+
+async function exportPalette() {
+  const palette = currentPalette();
+  if (!palette) return;
+  if (state.paletteDirty) throw new Error("调色板有未保存的修改，请先保存或放弃。");
+  const result = await api(`/palettes/${palette.id}/export`, {
+    method: "POST",
+    body: { format: $("#palette-export-format").value },
+  });
+  const link = document.createElement("a");
+  link.href = result.url;
+  link.download = result.download_name;
+  link.click();
+  toast(`已导出 ${result.download_name} · ${humanBytes(result.bytes)}`);
+}
+
+function deletePalette() {
+  const palette = currentPalette();
+  if (!palette) return;
+  confirmAction({
+    title: "删除调色板",
+    message: `删除调色板“${palette.name}”？已经套用到图片的处理副本不受影响。`,
+    onConfirm: async () => {
+      await api(`/palettes/${palette.id}`, { method: "DELETE" });
+      state.paletteId = null;
+      await refreshPalettes();
+      toast("调色板已删除");
+    },
+  });
+}
+
+async function importPaletteFile(file) {
+  if (!file) return;
+  const body = new FormData();
+  body.append("file", file);
+  const palette = await api("/palettes/import", { method: "POST", body });
+  await refreshPalettes(palette.id);
+  toast(`已导入“${palette.name}” · ${palette.colors.length} 种颜色`);
+}
+
+async function createPalette() {
+  const palette = await api("/palettes", {
+    method: "POST",
+    body: { name: "新建调色板", colors: [{ hex: "#2c5944", name: "" }, { hex: "#cce3ac", name: "" }, { hex: "#f7f8f4", name: "" }] },
+  });
+  await refreshPalettes(palette.id);
+  toast("已创建空白调色板，点击色块开始调整", "info");
 }
 
 function openExport(ids) {
@@ -626,6 +851,30 @@ function bindEvents() {
     } finally { $("#submit-job").disabled = false; }
   });
   on("#system-button", "click", showSystem);
+  on("#palette-import", "click", () => $("#palette-file-input").click());
+  on("#palette-file-input", "change", async event => {
+    await importPaletteFile(event.target.files[0]);
+    event.target.value = "";
+  });
+  on("#palette-new", "click", createPalette);
+  on("#palette-extract", "click", () => {
+    const asset = requireImage();
+    $("#extract-source").textContent = `从「${asset.name}」提取主要颜色，保存为可继续编辑的调色板。`;
+    $("#extract-name").value = "";
+    $("#extract-dialog").showModal();
+  });
+  on("#extract-form", "submit", async event => {
+    event.preventDefault();
+    const count = Number($("#extract-count").value);
+    const name = $("#extract-name").value.trim();
+    const palette = await api("/palettes/extract", {
+      method: "POST",
+      body: { asset_id: state.current.id, count, ...(name ? { name } : {}) },
+    });
+    $("#extract-dialog").close();
+    await refreshPalettes(palette.id);
+    toast(`已提取 ${palette.colors.length} 种颜色，保存为“${palette.name}”`);
+  });
   document.addEventListener("keydown", event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "o") {
       event.preventDefault(); $("#file-input").click();
@@ -646,9 +895,10 @@ function bindEvents() {
 
 async function bootstrap() {
   hydrateIcons();
-  const [catalog, config, library, presets] = await Promise.all([api("/catalog"), api("/config"), api("/assets?limit=60"), api("/presets")]);
-  Object.assign(state, { catalog, config, presets, assets: library.items, assetTotal: library.total });
+  const [catalog, config, library, presets, palettes] = await Promise.all([api("/catalog"), api("/config"), api("/assets?limit=60"), api("/presets"), api("/palettes")]);
+  Object.assign(state, { catalog, config, presets, palettes, assets: library.items, assetTotal: library.total });
   rememberAssets(library.items);
+  $("#palette-count").textContent = palettes.length;
   bindEvents();
   chooseCategory("color", "color_levels");
   renderPresets();

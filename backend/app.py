@@ -14,6 +14,7 @@ from .jobs import JobService
 from .exports import ExportService
 from .analysis import AnalysisService
 from .presets import PresetService
+from .palettes import PaletteService
 from .samples import SampleService
 from .diagnostics import DiagnosticsService
 from .errors import StudioError
@@ -29,6 +30,7 @@ def create_app(data_dir=None, testing=False):
     jobs = JobService(settings, store, assets, processing)
     exports = ExportService(settings, store, assets, processing)
     presets = PresetService(store, registry)
+    palettes = PaletteService(settings, store, assets, processing)
     services = {
         "settings": settings,
         "store": store,
@@ -38,6 +40,7 @@ def create_app(data_dir=None, testing=False):
         "jobs": jobs,
         "exports": exports,
         "presets": presets,
+        "palettes": palettes,
         "analysis": AnalysisService(assets),
         "samples": SampleService(assets, store),
         "diagnostics": DiagnosticsService(settings, store),
